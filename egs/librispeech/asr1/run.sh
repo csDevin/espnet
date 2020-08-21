@@ -46,7 +46,7 @@ use_lm_valbest_average=false # if true, the validation `lm_n_average`-best langu
 # Set this to somewhere where you want to put your data, or where
 # someone else has already put it.  You'll want to change this
 # if you're not on the CLSP grid.
-datadir=/home/data/librispeech/
+datadir=/home/data/librispeech
 
 # base url for downloads.
 data_url=www.openslr.org/resources/12
@@ -66,16 +66,22 @@ set -e
 set -u
 set -o pipefail
 
-train_set=train_clean_360
-train_dev=dev_clean
-recog_set="test_clean test_other dev_clean dev_other"
+train_set=trainset
+train_dev=devset
+recog_set="test_clean"
 
+if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
+    echo "stage -1: Data Download"
+    for part in dev-clean test-clean train-clean-100; do
+        local/download_and_untar.sh ${datadir} ${data_url} ${part}
+    done
+fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     ### Task dependent. You have to make data the following preparation part by yourself.
     ### But you can utilize Kaldi recipes in most cases
     echo "stage 0: Data preparation"
-    for part in dev-clean test-clean dev-other; do
+    for part in train-clean-100 dev-clean test-clean; do
         # use underscore-separated names in data directories.
         local/data_prep.sh ${datadir}/LibriSpeech/${part} data/${part//-/_}
     done
@@ -89,20 +95,19 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     echo "stage 1: Feature Generation"
     fbankdir=fbank
     # Generate the fbank features; by default 80-dimensional fbanks with pitch on each frame
-    for x in dev_clean test_clean dev_other test_other train_clean_100 train_clean_360; do
+    for x in train_clean_100 dev_clean test_clean ; do
         steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
             data/${x} exp/make_fbank/${x} ${fbankdir}
         utils/fix_data_dir.sh data/${x}
     done
 
-    utils/combine_data.sh --extra_files utt2num_frames data/${train_set} data/train_clean_100
-    utils/combine_data.sh --extra_files utt2num_frames data/dev_clean data/dev_other
-
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_set}_org data/train_clean_100
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_dev}_org data/dev_clean
 
     # remove utt having more than 3000 frames
     # remove utt having more than 400 characters
-    remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_set}
-    remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_dev}
+    remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_set}_org data/${train_set}
+    remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_dev}_org data/${train_dev}
 
     # compute global CMVN
     compute-cmvn-stats scp:data/${train_set}/feats.scp data/${train_set}/cmvn.ark
@@ -111,6 +116,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_tr_dir}/storage ]; then
     utils/create_split_dir.pl \
         /export/b{14,15,16,17}/${USER}/espnet-data/egs/librispeech/asr1/dump/${train_set}/delta${do_delta}/storage \
+        # What does 14-17 mean?
         ${feat_tr_dir}/storage
     fi
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_dt_dir}/storage ]; then
@@ -180,6 +186,8 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
         cut -f 2- -d" " data/${train_dev}/text | spm_encode --model=${bpemodel}.model --output_format=piece \
                                                             > ${lmdatadir}/valid.txt
     fi
+
+    echo "start running lm_train.py"
     ${cuda_cmd} --gpu ${ngpu} ${lmexpdir}/train.log \
         lm_train.py \
         --config ${lm_config} \
@@ -194,6 +202,7 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
         --dict ${dict} \
         --dump-hdf5-path ${lmdatadir}
 fi
+    echo "end running lm_train.py"
 
 if [ -z ${tag} ]; then
     expname=${train_set}_${backend}_$(basename ${train_config%.*})
@@ -211,7 +220,7 @@ mkdir -p ${expdir}
 
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "stage 4: Network Training"
-    ${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
+    ${cuda_cmd} --gpu  {ngpu} ${expdir}/train.log \
         asr_train.py \
         --config ${train_config} \
         --preprocess-conf ${preprocess_config} \

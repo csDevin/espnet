@@ -13,14 +13,14 @@ pos-enc: none
 unit: 2048
 
 # minibatch related
-batchsize: 32
+batchsize: 32  # 32
 maxlen: 40
 
 # optimization related
 opt: adam
 schedulers: lr=cosine
 dropout-rate: 0.0
-epoch: 50
+epoch: 1  # 50
 gradclip: 1.0
 lr: 1e-4
 lr-cosine-total: 100000
