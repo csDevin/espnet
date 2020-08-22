@@ -1,5 +1,5 @@
 lm-weight: 0.7
-beam-size: 20
+beam-size: 1  # 20
 penalty: 0.0
 maxlenratio: 0.0
 minlenratio: 0.0
