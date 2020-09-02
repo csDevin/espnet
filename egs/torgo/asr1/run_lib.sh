@@ -11,7 +11,7 @@ backend=pytorch
 stage=-1       # start from -1 if you need to start from data download
 stop_stage=100
 ngpu=4         # number of gpus ("0" uses cpu, otherwise use gpu)
-nj=1  # number of cpu  32!!!
+nj=24  # number of cpu  32!!!
 debugmode=1
 dumpdir=dump   # directory to dump full features
 N=0            # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
@@ -81,37 +81,40 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     ### Task dependent. You have to make data the following preparation part by yourself.
     ### But you can utilize Kaldi recipes in most cases
     echo "stage 0: Data preparation"
-    for part in train-clean-100 dev-clean test-clean; do
+    for part in test-clean; do
         # use underscore-separated names in data directories.在数据目录中使用下划线分隔的名称。
         local/data_prep.sh ${datadir}/LibriSpeech/${part} data/${part//-/_}
+        # data_prep.sh：生成5个对应数据集的5个文件：spk2gender, spk2utt, text, utt2spk, wav.scp
         # //-: delete all '-' characters; /: delete one '-' character; /_: repace deleted characters with '_'
     done
 fi
-
 feat_tr_dir=${dumpdir}/${train_set}/delta${do_delta}; mkdir -p ${feat_tr_dir}
 feat_dt_dir=${dumpdir}/${train_dev}/delta${do_delta}; mkdir -p ${feat_dt_dir}
+# dumpdir=dump; train_set=trainset; do_delta=false
+
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     ### Task dependent. You have to design training and dev sets by yourself.
     ### But you can utilize Kaldi recipes in most cases
     echo "stage 1: Feature Generation"
     fbankdir=fbank
     # Generate the fbank features; by default 80-dimensional fbanks with pitch on each frame
-    for x in train_clean_100 dev_clean test_clean ; do
+    for x in test_clean ; do
         steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
             data/${x} exp/make_fbank/${x} ${fbankdir}
         utils/fix_data_dir.sh data/${x}
     done
 
-    utils/combine_data.sh --extra_files utt2num_frames data/${train_set}_org data/train_clean_100
-    utils/combine_data.sh --extra_files utt2num_frames data/${train_dev}_org data/dev_clean
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_set}_org data/test_clean
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_dev}_org data/test_clean
 
     # remove utt having more than 3000 frames
-    # remove utt having more than 400 characters
+    # remove utt having more than 400 character
     remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_set}_org data/${train_set}
     remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_dev}_org data/${train_dev}
 
     # compute global CMVN
     compute-cmvn-stats scp:data/${train_set}/feats.scp data/${train_set}/cmvn.ark
+    # cmvn：倒谱均值方差归一化
 
     # dump features for training
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_tr_dir}/storage ]; then
@@ -137,9 +140,8 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     done
 fi
 
-dict=data/lang_char/${train_set}_${bpemode}${nbpe}_units.txt  # 
+dict=data/lang_char/${train_set}_${bpemode}${nbpe}_units.txt  # 发音词典
 bpemodel=data/lang_char/${train_set}_${bpemode}${nbpe}
-echo "dictionary: ${dict}"
 if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
     ### Task dependent. You have to check non-linguistic symbols used in the corpus.
     echo "stage 2: Dictionary and Json Data Preparation"
@@ -162,6 +164,8 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
             data/${rtask} ${dict} > ${feat_recog_dir}/data_${bpemode}${nbpe}.json
     done
 fi
+
+# exit 0
 
 # You can skip this and remove --rnnlm option in the recognition (stage 5)
 if [ -z ${lmtag} ]; then

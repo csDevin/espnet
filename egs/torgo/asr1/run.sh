@@ -11,7 +11,7 @@ backend=pytorch
 stage=-1       # start from -1 if you need to start from data download
 stop_stage=100
 ngpu=4         # number of gpus ("0" uses cpu, otherwise use gpu)
-nj=1  # number of cpu  32!!!
+nj=24  # number of cpu  32!!!
 debugmode=1
 dumpdir=dump   # directory to dump full features
 N=0            # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
@@ -52,11 +52,11 @@ datadir=/home/data/librispeech
 data_url=www.openslr.org/resources/12
 
 # bpemode (unigram or bpe)
-nbpe=5000
+nbpe=1230  # 5000
 bpemode=unigram
 
 # exp tag
-tag="" # tag for managing experiments.
+tag="" # tag for managing experiments. 用于管理实验的标签。!!!
 
 . utils/parse_options.sh || exit 1;
 
@@ -69,6 +69,7 @@ set -o pipefail
 train_set=trainset
 train_dev=devset
 recog_set="test_clean"
+# 测试集取名为test_clean，并没有实际意义
 
 # if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
 #     echo "stage -1: Data Download"
@@ -77,41 +78,45 @@ recog_set="test_clean"
 #     done
 # fi
 
-if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
-    ### Task dependent. You have to make data the following preparation part by yourself.
-    ### But you can utilize Kaldi recipes in most cases
-    echo "stage 0: Data preparation"
-    for part in train-clean-100 dev-clean test-clean; do
-        # use underscore-separated names in data directories.在数据目录中使用下划线分隔的名称。
-        local/data_prep.sh ${datadir}/LibriSpeech/${part} data/${part//-/_}
-        # //-: delete all '-' characters; /: delete one '-' character; /_: repace deleted characters with '_'
-    done
-fi
+# if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
+#     ### Task dependent. You have to make data the following preparation part by yourself.
+#     ### But you can utilize Kaldi recipes in most cases
+#     echo "stage 0: Data preparation"
+#     for part in test-clean; do
+#         # use underscore-separated names in data directories.在数据目录中使用下划线分隔的名称。
+#         local/data_prep.sh ${datadir}/LibriSpeech/${part} data/${part//-/_}
+#         # data_prep.sh：生成5个对应数据集的5个文件：spk2gender, spk2utt, text, utt2spk, wav.scp
+#         # //-: delete all '-' characters; /: delete one '-' character; /_: repace deleted characters with '_'
+#     done
+# fi
 
 feat_tr_dir=${dumpdir}/${train_set}/delta${do_delta}; mkdir -p ${feat_tr_dir}
 feat_dt_dir=${dumpdir}/${train_dev}/delta${do_delta}; mkdir -p ${feat_dt_dir}
+# dumpdir=dump; train_set=trainset; do_delta=false
+
 if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     ### Task dependent. You have to design training and dev sets by yourself.
     ### But you can utilize Kaldi recipes in most cases
     echo "stage 1: Feature Generation"
     fbankdir=fbank
     # Generate the fbank features; by default 80-dimensional fbanks with pitch on each frame
-    for x in train_clean_100 dev_clean test_clean ; do
+    for x in test_clean ; do
         steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
             data/${x} exp/make_fbank/${x} ${fbankdir}
         utils/fix_data_dir.sh data/${x}
     done
 
-    utils/combine_data.sh --extra_files utt2num_frames data/${train_set}_org data/train_clean_100
-    utils/combine_data.sh --extra_files utt2num_frames data/${train_dev}_org data/dev_clean
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_set}_org data/test_clean
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_dev}_org data/test_clean
 
     # remove utt having more than 3000 frames
-    # remove utt having more than 400 characters
+    # remove utt having more than 400 character
     remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_set}_org data/${train_set}
     remove_longshortdata.sh --maxframes 3000 --maxchars 400 data/${train_dev}_org data/${train_dev}
 
     # compute global CMVN
     compute-cmvn-stats scp:data/${train_set}/feats.scp data/${train_set}/cmvn.ark
+    # cmvn：倒谱均值方差归一化
 
     # dump features for training
     if [[ $(hostname -f) == *.clsp.jhu.edu ]] && [ ! -d ${feat_tr_dir}/storage ]; then
@@ -137,16 +142,16 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     done
 fi
 
-dict=data/lang_char/${train_set}_${bpemode}${nbpe}_units.txt  # 
+dict=data/lang_char/${train_set}_${bpemode}${nbpe}_units.txt  # 发音词典
+# dict=data/lang_char/trainset_unigram5000_units.txt
 bpemodel=data/lang_char/${train_set}_${bpemode}${nbpe}
-echo "dictionary: ${dict}"
 if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
     ### Task dependent. You have to check non-linguistic symbols used in the corpus.
     echo "stage 2: Dictionary and Json Data Preparation"
     mkdir -p data/lang_char/
     echo "<unk> 1" > ${dict} # <unk> must be 1, 0 will be used for "blank" in CTC
     cut -f 2- -d" " data/${train_set}/text > data/lang_char/input.txt
-    spm_train --input=data/lang_char/input.txt --vocab_size=${nbpe} --model_type=${bpemode} --model_prefix=${bpemodel} --input_sentence_size=100000000
+    spm_train --input=data/lang_char/input.txt --vocab_size=${nbpe} --model_type=${bpemode} --model_prefix=${bpemodel} --input_sentence_size=100000000  --hard_vocab_limit=false
     spm_encode --model=${bpemodel}.model --output_format=piece < data/lang_char/input.txt | tr ' ' '\n' | sort | uniq | awk '{print $0 " " NR+1}' >> ${dict}
     wc -l ${dict}
 
@@ -168,6 +173,7 @@ if [ -z ${lmtag} ]; then
     lmtag=$(basename ${lm_config%.*})
 fi
 lmexpname=train_rnnlm_${backend}_${lmtag}_${bpemode}${nbpe}_ngpu${ngpu}
+# train_rnnlm_pytorch_lm_unigram5000_ngpu1
 lmexpdir=exp/${lmexpname}
 mkdir -p ${lmexpdir}
 
@@ -204,17 +210,24 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
 fi
 
 if [ -z ${tag} ]; then
+# -z: string的长度为零则为真
     expname=${train_set}_${backend}_$(basename ${train_config%.*})
+    # train_config=conf/train.yaml
+    # expname=trainset_pytorch_train
     if ${do_delta}; then
+    # do_delta=false
         expname=${expname}_delta
     fi
     if [ -n "${preprocess_config}" ]; then
+    # preprocess_config=conf/specaug.yaml
         expname=${expname}_$(basename ${preprocess_config%.*})
+        # expname=trainset_pytorch_train_specaug
     fi
 else
     expname=${train_set}_${backend}_${tag}
 fi
 expdir=exp/${expname}
+# expdir=exp/trainset_pytorch_train_specaug
 mkdir -p ${expdir}
 
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
@@ -238,6 +251,8 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
 fi
 
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
+
+# You can skip this and remove --rnnlm option in the recognition (stage 5)!!!
     echo "stage 5: Decoding"
     if [[ $(get_yaml.py ${train_config} model-module) = *transformer* ]] || \
        [[ $(get_yaml.py ${train_config} model-module) = *conformer* ]]; then
@@ -281,6 +296,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
     for rtask in ${recog_set}; do
     (
         decode_dir=decode_${rtask}_${recog_model}_$(basename ${decode_config%.*})_${lmtag}
+        # decode_dir=decode_test_clean_model.acc.best_decode_lm
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
 
         # split data
@@ -303,6 +319,10 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
             --api v2
 
         score_sclite.sh --bpe ${nbpe} --bpemodel ${bpemodel}.model --wer true ${expdir}/${decode_dir} ${dict}
+        # nbpe=5000; bpemodel=data/lang_char/trainset_unigram5000.model; wer=true
+        # exp/trainset_pytorch_train_specaug / decode_test_clean_model.acc.best_decode_lm
+        # data/lang_char/trainset_unigram5000_units.txt
+        # calc wer score
 
     ) &
     pids+=($!) # store background pids

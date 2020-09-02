@@ -48,7 +48,6 @@ for reader_dir in $(find -L $src -mindepth 1 -maxdepth 1 -type d | sort); do
 # | sort排序
   reader=$(basename $reader_dir)
   # basename: only output the file name, not including the path
-  echo "${reader_dir}---${reader}"
   if ! [ $reader -eq $reader ]; then  # not integer.
   # 因为文件名是数字，所以可以直接取等号，-eq运算符两边只能是整数或整数字符串
     exit 1
@@ -59,7 +58,7 @@ for reader_dir in $(find -L $src -mindepth 1 -maxdepth 1 -type d | sort); do
     echo "Unexpected gender: '$reader_gender'"
     exit 1
   fi
-  exit 0
+
   for chapter_dir in $(find -L $reader_dir/ -mindepth 1 -maxdepth 1 -type d | sort); do
     chapter=$(basename $chapter_dir)
     if ! [ "$chapter" -eq "$chapter" ]; then
