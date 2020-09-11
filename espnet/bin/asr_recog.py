@@ -107,7 +107,7 @@ def get_parser():
         "--num-encs", default=1, type=int, help="Number of encoders in the model."
     )
     # search related
-    parser.add_argument("--nbest", type=int, default=1, help="Output N-best hypotheses")
+    parser.add_argument("--nbest", type=int, default=1, help="Output N-best hypotheses")  # !!!可以改
     parser.add_argument("--beam-size", type=int, default=1, help="Beam size")
     parser.add_argument("--penalty", type=float, default=0.0, help="Incertion penalty")
     parser.add_argument(
@@ -221,11 +221,29 @@ def get_parser():
         default=0.999,
         help="Threshold probability for CTC output",
     )
+    # user added
+    parser.add_argument(
+        "--ndo",
+        type=int,
+        default=1234,
+        help="numbers of decoder output dim in run.sh",
+    )
+    parser.add_argument(
+        "--nbpe",
+        type=int,
+        default=4321,
+        help="numbers of decoder output dim in run.sh",
+    )    
 
     return parser
 
 
 def main(args):
+
+    os.chdir("/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/")
+    os.system("pwd")
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    # logging.info("***********running asr_recog.py***********")
     """Run the main decoding function."""
     parser = get_parser()
     args = parser.parse_args(args)
@@ -292,9 +310,12 @@ def main(args):
             if args.num_encs == 1:
                 # Experimental API that supports custom LMs
                 if args.api == "v2":
+                    logging.info("api==%s"%args.api)
                     from espnet.asr.pytorch_backend.recog import recog_v2
-
+                    # logging.warning("***********reding recog_v2***********")
+                    # print("***********reding recog_v2***********")
                     recog_v2(args)
+                    
                 else:
                     from espnet.asr.pytorch_backend.asr import recog
 
@@ -304,6 +325,7 @@ def main(args):
                         )
                     recog(args)
             else:
+                logging.info("3")
                 if args.api == "v2":
                     raise NotImplementedError(
                         f"--num-encs {args.num_encs} > 1 is not supported in --api v2"

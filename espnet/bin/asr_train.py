@@ -514,10 +514,14 @@ def get_parser(parser=None, required=True):
     )
     parser.add_argument("--fbank-fmin", type=float, default=0.0, help="")
     parser.add_argument("--fbank-fmax", type=float, default=None, help="")
+    parser.add_argument("--pretrain", type=str, default=None, help="pretrained model")
     return parser
 
 
 def main(cmd_args):
+    os.chdir("/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/")
+    os.system("pwd")
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3, 4"
     """Run the main training function."""
     parser = get_parser()
     args, _ = parser.parse_known_args(cmd_args)
@@ -620,7 +624,7 @@ def main(cmd_args):
         elif args.backend == "pytorch":
             from espnet.asr.pytorch_backend.asr import train
 
-            train(args)
+            train(args)  # running this
         else:
             raise ValueError("Only chainer and pytorch are supported.")
     else:

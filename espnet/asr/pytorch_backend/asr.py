@@ -20,6 +20,7 @@ from chainer.training.updater import StandardUpdater
 import numpy as np
 from tensorboardX import SummaryWriter
 import torch
+import torch.nn as nn
 from torch.nn.parallel import data_parallel
 
 from espnet.asr.asr_utils import adadelta_eps_decay
@@ -430,9 +431,19 @@ def train(args):
         logging.info("Multitask learning mode")
 
     if (args.enc_init is not None or args.dec_init is not None) and args.num_encs == 1:
-        model = load_trained_modules(idim_list[0], odim, args)
+        # model = load_trained_modules(idim_list[0], odim, args)  # !!!读取预训练模型
+        # 定义使用预训练模型作为训练模型
+        model, pre_args = load_trained_model('/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/exp/trainset_pytorch_train_specaug/results/model.acc.best')  # 导入预训练模型及其args
+        assert isinstance(model, ASRInterface)
+        model.odim = odim
+        model.sos = odim - 1
+        model.eos = odim - 1
+        model.decoder.output_layer = nn.Linear(512, odim)
+        model.criterion.size = odim
+        
+
     else:
-        model_class = dynamic_import(args.model_module)
+        model_class = dynamic_import(args.model_module)  # 定义新模型
         model = model_class(
             idim_list[0] if args.num_encs == 1 else idim_list, odim, args
         )
@@ -905,6 +916,7 @@ def recog(args):
         if getattr(rnnlm_args, "model_module", "default") != "default":
             raise ValueError(
                 "use '--api v2' option to decode with non-default language model"
+                # “使用'--api v2'选项以非默认语言模型进行解码”
             )
         rnnlm = lm_pytorch.ClassifierWithState(
             lm_pytorch.RNNLM(
