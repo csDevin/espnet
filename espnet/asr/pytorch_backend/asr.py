@@ -433,21 +433,49 @@ def train(args):
     if (args.enc_init is not None or args.dec_init is not None) and args.num_encs == 1:
         # model = load_trained_modules(idim_list[0], odim, args)  # !!!读取预训练模型
         # 定义使用预训练模型作为训练模型
-        model, pre_args = load_trained_model('/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/exp/trainset_pytorch_train_specaug/results/model.acc.best')  # 导入预训练模型及其args
-        assert isinstance(model, ASRInterface)
+        model, pre_args = load_trained_model(
+            'exp/trainset_pytorch_train_specaug/pretrained_model/model.val5.avg.best')
+        # 导入预训练模型及其args
         model.odim = odim
         model.sos = odim - 1
         model.eos = odim - 1
+
+        # 冻结模型参数
+        for param in model.parameters():
+            param.requires_grad = False
+        # 新创建的模块的参数不会冻结
         model.decoder.output_layer = nn.Linear(512, odim)
-        model.criterion.size = odim
-        
+        model.ctc.ctc_lo = nn.Linear(512, odim)  # !!!不确定需不需要
+        model.decoder.embed._modules['0'].num_embeddings=odim  # 修改num_embeddings
+        # 修改weights和bias
+        model.decoder.output_layer.weight = torch.nn.Parameter(
+            torch.nn.init.normal(torch.FloatTensor(odim,512)))
+        model.decoder.output_layer.bias = torch.nn.Parameter(
+            torch.nn.init.normal(torch.FloatTensor(1190)))
+        model.decoder.embed[0].weight = torch.nn.Parameter(
+            torch.nn.init.normal(torch.FloatTensor(odim,512)))
+        model.ctc.ctc_lo.weight = torch.nn.Parameter(
+            torch.nn.init.normal(torch.FloatTensor(odim,512)))
+        model.ctc.ctc_lo.bias = torch.nn.Parameter(
+            torch.nn.init.normal(torch.FloatTensor(1190)))
+        # model.decoder.embed[0].weight.requires_grad = True
+        # model.ctc.ctc_lo.weight.requires_gLrad = True
+        # model.ctc.ctc_lo.bias.requires_grad = True
+        # 解冻参数
+        for param in model.decoder.output_layer.parameters():
+            param.requires_grad = True
+        for param in model.decoder.embed.parameters():
+            param.requires_grad = True
+        for param in model.ctc.ctc_lo.parameters():
+            param.requires_grad = True
+        pre_args.char_list = args.char_list
 
     else:
         model_class = dynamic_import(args.model_module)  # 定义新模型
         model = model_class(
             idim_list[0] if args.num_encs == 1 else idim_list, odim, args
         )
-    assert isinstance(model, ASRInterface)
+    assert isinstance(model, ASRInterface)  # 声明神经网络
 
     logging.info(
         " Total parameter of the model = "
@@ -565,9 +593,9 @@ def train(args):
         )
 
     # read json data
-    with open(args.train_json, "rb") as f:
+    with open(args.train_json, "rb") as f:  # 读取训练集数据，之后存入trainer中
         train_json = json.load(f)["utts"]
-    with open(args.valid_json, "rb") as f:
+    with open(args.valid_json, "rb") as f:  # 读取验证集数据
         valid_json = json.load(f)["utts"]
 
     use_sortagrad = args.sortagrad == -1 or args.sortagrad > 0
@@ -655,7 +683,8 @@ def train(args):
             trigger=(args.sortagrad if args.sortagrad != -1 else args.epochs, "epoch"),
         )
 
-    # Resume from a snapshot
+    # Resume from a snapshot，选择从一个snapshot中恢复训练进度!!!
+    # args.resume='exp/trainset_pytorch_train_specaug/results/snapshot.ep.3'
     if args.resume:
         logging.info("resumed from %s" % args.resume)
         torch_resume(args.resume, trainer)
@@ -766,7 +795,7 @@ def train(args):
         )
     )
 
-    # Save best models
+    # Save best models 存储最佳模型
     trainer.extend(
         snapshot_object(model, "model.loss.best"),
         trigger=training.triggers.MinValueTrigger("validation/main/loss"),
@@ -835,7 +864,7 @@ def train(args):
                 ),
             )
 
-    # Write a log of evaluation statistics for each epoch
+    # Write a log of evaluation statistics for each epoch!!!没有执行
     trainer.extend(
         extensions.LogReport(trigger=(args.report_interval_iters, "iteration"))
     )

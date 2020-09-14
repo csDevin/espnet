@@ -166,10 +166,9 @@ def load_trained_model(model_path):
         'exp/trainset_pytorch_train_specaug/results/model.acc.best'
 
     """
+    # 输入维度，输出维度，声学模型参数集!!!
     idim, odim, train_args = get_model_conf(
-    # 输入维度，输出维度，声学模型参数集
         model_path, os.path.join(os.path.dirname(model_path), "model.json")
-        # 需要修改model.json文件中的83，5002和"char_list"!!!
     )
 
     logging.warning("reading model parameters from " + model_path)

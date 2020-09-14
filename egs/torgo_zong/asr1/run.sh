@@ -10,7 +10,7 @@
 backend=pytorch
 stage=-1 # start from -1 if you need to start from data download
 stop_stage=100
-ngpu=2 # number of gpus ("0" uses cpu, otherwise use gpu)
+ngpu=4 # number of gpus ("0" uses cpu, otherwise use gpu)
 nj=10  # number of cpu  32!!!
 debugmode=1
 dumpdir=dump # directory to dump full features
@@ -36,7 +36,7 @@ recog_model=model.acc.best  # set a model to be used for decoding: 'model.acc.be
 lang_model=rnnlm.model.best # set a language model to be used for decoding
 
 # model average realted (only for transformer)
-n_average=5              # the number of ASR models to be averaged 要平均的ASR模型数
+n_average=5              # the number of ASR models to be averaged
 use_valbest_average=true # if true, the validation `n_average`-best ASR models will be averaged.
 # if false, the last `n_average` ASR models will be averaged.
 lm_n_average=0               # the number of languge models to be averaged
@@ -190,7 +190,7 @@ lmexpname=train_rnnlm_${backend}_${lmtag}_${bpemode}${nbpe}_ngpu${ngpu}
 lmexpdir=exp/${lmexpname}
 mkdir -p ${lmexpdir}
 
-if [ ${stage} -le -10 ] && [ ${stop_stage} -ge 10 ]; then
+if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
     echo "stage 3: LM Preparation"
     lmdatadir=data/local/lm_train_${bpemode}${nbpe}
     # use external data
@@ -261,9 +261,6 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --resume ${resume} \
         --train-json ${feat_tr_dir}/data_${bpemode}${nbpe}.json \
         --valid-json ${feat_dt_dir}/data_${bpemode}${nbpe}.json
-        # --pretrained "exp/trainset_pytorch_train_specaug/pretrained_model/model.val5.avg.best"
-        # --enc-init "exp/trainset_pytorch_train_specaug/pretrained_model/model.val5.avg.best"
-        # --dec-init "exp/trainset_pytorch_train_specaug/pretrained_model/model.val5.avg.best"
 fi
 
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
@@ -281,20 +278,12 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
             recog_model=model.last${n_average}.avg.best
             opt="--log"
         fi
-
-        # average_checkpoints.py \  # !!!禁用
-        #     ${opt} \
-        #     --backend ${backend} \
-        #     --snapshots ${expdir}/results/snapshot.ep.* \
-        #     --out ${expdir}/results/${recog_model} \
-        #     --num ${n_average}
-
-        # ${opt}: --log exp/trainset_pytorch_train_specaug/results/log
-        # --backend pytorch
-        # --snapshots exp/trainset_pytorch_train_specaug/results/snapshot.ep.*
-        # --out exp/trainset_pytorch_train_specaug/results/model.acc.bests \
-        # --num 5
-        # average_checkpoints.py --log exp/trainset_pytorch_train_specaug/results/log --backend pytorch --snapshots exp/trainset_pytorch_train_specaug/results/snapshot.ep.* --out exp/trainset_pytorch_train_specaug/results/model.acc.bests --num 5
+        average_checkpoints.py \
+            ${opt} \
+            --backend ${backend} \
+            --snapshots ${expdir}/results/snapshot.ep.* \
+            --out ${expdir}/results/${recog_model} \
+            --num ${n_average}
 
         # # Average LM models
         # if [ ${lm_n_average} -eq 0 ]; then
@@ -348,7 +337,6 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
 
             score_sclite.sh --bpe ${nbpe} --bpemodel ${bpemodel}.model --wer true \
                 ${expdir}/${decode_dir} ${dict}
-            # score_sclite.sh --bpe 1230 --bpemodel data/lang_char/ trainset_unigram1230.model --wer true ${expdir}/${decode_dir} ${dict}
             # nbpe=5000; bpemodel=data/lang_char/trainset_unigram5000.model; wer=true
             # exp/trainset_pytorch_train_specaug / decode_test_clean_model.acc.best_decode_lm
             # data/lang_char/trainset_unigram5000_units.txt

@@ -694,7 +694,7 @@ def snapshot_object(target, filename):
     return snapshot_object
 
 
-def torch_load(path, model):
+def torch_load(path, model):  # !!!读取状态词典
     """Load torch model states.
 
     Args:

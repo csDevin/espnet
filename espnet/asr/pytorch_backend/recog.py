@@ -57,8 +57,8 @@ def recog_v2(args):
     # model.odim = args.ndo + 2  # dim
     # model.sos = args.ndo + 1  # index
     # model.eos = args.ndo + 1
-    # # 修改decoder最后一层输出维度
-    # model.decoder.output_layer = nn.Linear(512, args.ndo + 2)
+    # 修改decoder最后一层输出维度
+    # model.dec.output = nn.Linear(512, args.ndo + 2)
 
     # # 读取torgo_dict.txt为list对象，替换train_args下的char_list中的值。
     # torgo_list = []
@@ -161,14 +161,14 @@ def recog_v2(args):
         js = json.load(f)["utts"]
 
     # !!!修改decoding的utt个数
-    # F_data = {}
-    # count = 0
-    # for k, v in js.items():
-    #     if js[k]['utt2spk'] == 'FC01':
-    #     # if count < 1:
-    #         F_data[k] = v
-    #         count += 1
-    # js = F_data
+    F_data = {}
+    count = 0
+    for k, v in js.items():
+        # if js[k]['utt2spk'] == 'FC01':
+        if count < 2:
+            F_data[k] = v
+            count += 1
+    js = F_data
 
     new_js = {}
     with torch.no_grad():

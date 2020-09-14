@@ -242,14 +242,14 @@ def main(args):
 
     os.chdir("/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/")
     os.system("pwd")
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5"
     # logging.info("***********running asr_recog.py***********")
     """Run the main decoding function."""
     parser = get_parser()
     args = parser.parse_args(args)
 
     if args.ngpu == 0 and args.dtype == "float16":
-        raise ValueError(f"--dtype {args.dtype} does not support the CPU backend.")
+        raise ValueError(f"--dtype {args.dtype} does not support the CPU bacend.")
 
     # logging info
     if args.verbose == 1:
