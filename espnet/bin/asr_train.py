@@ -106,7 +106,7 @@ def get_parser(parser=None, required=True):
     )
     parser.add_argument(
         "--save-interval-iters",
-        default=40,  # !!!snapshot要小于一个epoch的iter次数
+        default=45,  # !!!snapshot要小于一个epoch的iter次数
         type=int,
         help="Save snapshot interval iterations",
     )

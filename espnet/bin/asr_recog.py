@@ -242,7 +242,7 @@ def main(args):
 
     os.chdir("/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/")
     os.system("pwd")
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
     # logging.info("***********running asr_recog.py***********")
     """Run the main decoding function."""
     parser = get_parser()

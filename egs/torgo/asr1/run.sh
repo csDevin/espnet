@@ -37,7 +37,7 @@ lang_model=rnnlm.model.best # set a language model to be used for decoding
 
 # model average realted (only for transformer)
 n_average=5              # the number of ASR models to be averaged 要平均的ASR模型数
-use_valbest_average=true # if true, the validation `n_average`-best ASR models will be averaged.
+use_valbest_average=false # !!!if true, the validation `n_average`-best ASR models will be averaged.
 # if false, the last `n_average` ASR models will be averaged.
 lm_n_average=0               # the number of languge models to be averaged
 use_lm_valbest_average=false # if true, the validation `lm_n_average`-best language models will be averaged.
@@ -274,20 +274,25 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
         [[ $(get_yaml.py ${train_config} model-module) = *conformer* ]]; then
         # Average ASR models
         # How to load the recog_model and the LM model?
+
+        # !!!取acc_best模型而不是average模型
         if ${use_valbest_average}; then
             recog_model=model.val${n_average}.avg.best
             opt="--log ${expdir}/results/log"
         else
-            recog_model=model.last${n_average}.avg.best
+            # recog_model=model.last${n_average}.avg.best
+            recog_model=model.acc.best
             opt="--log"
         fi
 
-        # average_checkpoints.py \  # !!!禁用
+        # !!!禁用
+        # average_checkpoints.py \
         #     ${opt} \
         #     --backend ${backend} \
         #     --snapshots ${expdir}/results/snapshot.ep.* \
         #     --out ${expdir}/results/${recog_model} \
         #     --num ${n_average}
+
 
         # ${opt}: --log exp/trainset_pytorch_train_specaug/results/log
         # --backend pytorch
