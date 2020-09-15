@@ -100,13 +100,13 @@ def get_parser(parser=None, required=True):
     )
     parser.add_argument(
         "--report-interval-iters",
-        default=100,
+        default=5,  # 100个iterations刷新一次进度，计算一次损失
         type=int,
         help="Report interval iterations",
     )
     parser.add_argument(
         "--save-interval-iters",
-        default=0,
+        default=40,  # !!!snapshot要小于一个epoch的iter次数
         type=int,
         help="Save snapshot interval iterations",
     )
@@ -294,7 +294,7 @@ def get_parser(parser=None, required=True):
     )
     parser.add_argument(
         "--criterion",
-        default="acc",
+        default="loss",  # default: acc
         type=str,
         choices=["loss", "loss_eps_decay_only", "acc"],
         help="Criterion to perform epsilon decay",
@@ -305,9 +305,9 @@ def get_parser(parser=None, required=True):
     parser.add_argument(
         "--epochs", "-e", default=30, type=int, help="Maximum number of epochs"
     )
-    parser.add_argument(
+    parser.add_argument(  # !!! early_stop_criterion
         "--early-stop-criterion",
-        default="validation/main/acc",
+        default="validation/main/acc",  # validation/main/acc
         type=str,
         nargs="?",
         help="Value to monitor to trigger an early stopping of the training",
@@ -521,7 +521,7 @@ def get_parser(parser=None, required=True):
 def main(cmd_args):
     os.chdir("/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/")
     os.system("pwd")
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3, 4"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,5,6"
     """Run the main training function."""
     parser = get_parser()
     args, _ = parser.parse_known_args(cmd_args)

@@ -446,16 +446,17 @@ def train(args):
         # 新创建的模块的参数不会冻结
         model.decoder.output_layer = nn.Linear(512, odim)
         model.ctc.ctc_lo = nn.Linear(512, odim)  # !!!不确定需不需要
-        model.decoder.embed._modules['0'].num_embeddings=odim  # 修改num_embeddings
+        model.decoder.embed._modules['0'].num_embeddings = odim  # 修改num_embeddings
+        model.criterion.size = odim # 修改criterion的size
         # 修改weights和bias
         model.decoder.output_layer.weight = torch.nn.Parameter(
-            torch.nn.init.normal(torch.FloatTensor(odim,512)))
+            torch.nn.init.normal(torch.FloatTensor(odim, 512)))
         model.decoder.output_layer.bias = torch.nn.Parameter(
             torch.nn.init.normal(torch.FloatTensor(1190)))
         model.decoder.embed[0].weight = torch.nn.Parameter(
-            torch.nn.init.normal(torch.FloatTensor(odim,512)))
+            torch.nn.init.normal(torch.FloatTensor(odim, 512)))
         model.ctc.ctc_lo.weight = torch.nn.Parameter(
-            torch.nn.init.normal(torch.FloatTensor(odim,512)))
+            torch.nn.init.normal(torch.FloatTensor(odim, 512)))
         model.ctc.ctc_lo.bias = torch.nn.Parameter(
             torch.nn.init.normal(torch.FloatTensor(1190)))
         # model.decoder.embed[0].weight.requires_grad = True
@@ -468,7 +469,7 @@ def train(args):
             param.requires_grad = True
         for param in model.ctc.ctc_lo.parameters():
             param.requires_grad = True
-        pre_args.char_list = args.char_list
+        # pre_args.char_list = args.char_list
 
     else:
         model_class = dynamic_import(args.model_module)  # 定义新模型
@@ -815,7 +816,7 @@ def train(args):
     else:
         trainer.extend(torch_snapshot(), trigger=(1, "epoch"))
 
-    # epsilon decay in the optimizer
+    # epsilon decay in the optimizer 优化器中的Epsilon衰变
     if args.opt == "adadelta":
         if args.criterion == "acc" and mtl_mode != "ctc":
             trainer.extend(

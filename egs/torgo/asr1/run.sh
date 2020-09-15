@@ -77,7 +77,7 @@ set -o pipefail
 
 train_set=trainset
 train_dev=devset
-recog_set="test_clean dev_clean"
+recog_set="test_clean"
 # 测试集取名为test_clean，并没有实际意义
 
 # if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
