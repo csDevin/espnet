@@ -44,6 +44,11 @@ from espnet.nets.scorers.ctc import CTCPrefixScorer
 from espnet.utils.fill_missing_args import fill_missing_args
 
 
+#  import cross-module attetnion packages
+from espnet.nets.pytorch_backend.cross_attention_multi import MultiHeadAttention
+from espnet.nets.pytorch_backend.cross_attention_multi import MultiHeadCrossAttention
+
+
 class E2E(ASRInterface, torch.nn.Module):
     """E2E module.
 
@@ -311,12 +316,21 @@ class E2E(ASRInterface, torch.nn.Module):
             self.error_calculator = None
         self.rnnlm = None
 
+        # 1.2 Cross-Module Attention
+        # n_head, query_model, kv_model, d_k, d_v
+        self.array_head_cross = MultiHeadCrossAttention(4, 512, 512, 64, 64)
+        self.head_array_cross = MultiHeadCrossAttention(4, 512, 512, 64, 64)
+
+        # 1.3 Self-Attention
+        self.array_att = MultiHeadAttention(4, 512, 64, 64)
+        self.head_att = MultiHeadAttention(4, 512, 64, 64)
+
     def reset_parameters(self, args):
         """Initialize parameters."""
         # initialize parameters
         initialize(self, args.transformer_init)
 
-    def forward(self, xs_pad, ilens, ys_pad):
+    def forward(self, xs_pad_array, ilens_array, xs_pad_head, ilens_head, ys_pad):
         """E2E forward.
 
         :param torch.Tensor xs_pad: batch of padded source sequences (B, Tmax, idim)
@@ -330,11 +344,31 @@ class E2E(ASRInterface, torch.nn.Module):
         :rtype: float
         """
         # 1. forward encoder
-        xs_pad = xs_pad[:, : max(ilens)]  # for data parallel
-        src_mask = make_non_pad_mask(ilens.tolist()).to(xs_pad.device).unsqueeze(-2)
-        hs_pad, hs_mask = self.encoder(xs_pad, src_mask)
-        self.hs_pad = hs_pad
+        # array dysarthric
+        xs_pad_array = xs_pad_array[:, : max(ilens_array)]  # for data parallel
+        src_mask = make_non_pad_mask(ilens_array.tolist()).to(
+            xs_pad_array.device).unsqueeze(-2)
+        hs_pad_array, hs_mask_array = self.encoder(xs_pad_array, src_mask)
+        
+        # head dysarthric
+        xs_pad_head = xs_pad_head[:, : max(ilens_head)]  # for data parallel
+        src_mask = make_non_pad_mask(ilens_head.tolist()).to(
+            xs_pad_head.device).unsqueeze(-2)
+        hs_pad_head, hs_mask_head = self.encoder(xs_pad_head, src_mask)
 
+
+        cross_array_head, _cross_att_score = self.array_head_cross(
+            hs_pad_array, hs_pad_head, hs_pad_head)
+        cross_head_array, _cross_att_score = self.head_array_cross(
+            hs_pad_head, hs_pad_array, hs_pad_array)
+
+
+        att_array, _att_score = self.array_att(
+            cross_array_head, cross_array_head, cross_array_head)
+        att_head, _att_score = self.head_att(
+            cross_head_array, cross_head_array, cross_head_array)
+
+        self.hs_pad = torch.cat([att_head,att_array],axis=1)
         
         # 2. forward decoder
         if self.decoder is not None:
@@ -348,7 +382,7 @@ class E2E(ASRInterface, torch.nn.Module):
                     ys_pad, self.sos, self.eos, self.ignore_id
                 )
                 ys_mask = target_mask(ys_in_pad, self.ignore_id)
-            pred_pad, pred_mask = self.decoder(ys_in_pad, ys_mask, hs_pad, hs_mask)
+            pred_pad, pred_mask = self.decoder(ys_in_pad, ys_mask, self.hs_pad, hs_mask)
             self.pred_pad = pred_pad
 
             # 3. compute attention loss
@@ -368,13 +402,13 @@ class E2E(ASRInterface, torch.nn.Module):
         else:
             batch_size = xs_pad.size(0)
             hs_len = hs_mask.view(batch_size, -1).sum(1)
-            loss_ctc = self.ctc(hs_pad.view(batch_size, -1, self.adim), hs_len, ys_pad)
+            loss_ctc = self.ctc(self.hs_pad.view(batch_size, -1, self.adim), hs_len, ys_pad)
             if not self.training and self.error_calculator is not None:
-                ys_hat = self.ctc.argmax(hs_pad.view(batch_size, -1, self.adim)).data
+                ys_hat = self.ctc.argmax(self.hs_pad.view(batch_size, -1, self.adim)).data
                 cer_ctc = self.error_calculator(ys_hat.cpu(), ys_pad.cpu(), is_ctc=True)
             # for visualization
             if not self.training:
-                self.ctc.softmax(hs_pad)
+                self.ctc.softmax(self.hs_pad)
 
         # 5. compute cer/wer
         if self.training or self.error_calculator is None or self.decoder is None:

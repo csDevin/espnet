@@ -249,24 +249,27 @@ def load_trained_modules(idim, odim, args, interface=ASRInterface):
     dec_modules = args.dec_init_mods
 
     model_class = dynamic_import(args.model_module)  # 定义声学Transformer模型并随机初始化
+    # define new model
     main_model = model_class(idim, odim, args)
     assert isinstance(main_model, interface)
 
-    pre_model, pre_args = load_trained_model('/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/exp/trainset_pytorch_train_specaug/results/model.acc.best')  # 导入预训练模型及其args
-    assert isinstance(pre_model, ASRInterface)
+    # pre_model, pre_args = load_trained_model('/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo_multi/asr1/exp/train_array_head_pytorch_train_specaug/pretrained_model/model.val5.avg.best')  # 导入预训练模型及其args
+    # assert isinstance(pre_model, ASRInterface)
 
     main_state_dict = main_model.state_dict()
 
     logging.warning("model(s) found for pre-initialization")
     for model_path, modules in [
         (enc_model_path, enc_modules),
-        (dec_model_path, dec_modules),
+        # (dec_model_path, dec_modules),  # !!!注释，使用第一个enc_model_path加载整个模型权重
     ]:
         if model_path is not None:
             if os.path.isfile(model_path):
                 model_state_dict, is_lm = get_trained_model_state_dict(model_path)  # 读取预训练模型的状态词典
 
-                modules = filter_modules(model_state_dict, modules)  # 过滤不匹配的模块
+                # modules = filter_modules(model_state_dict, modules)  # 过滤不匹配的模块
+                modules = filter_modules(model_state_dict, main_state_dict)
+
                 if is_lm:
                     partial_state_dict, modules = get_partial_lm_state_dict(
                         model_state_dict, modules

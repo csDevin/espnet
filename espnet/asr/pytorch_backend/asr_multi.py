@@ -6,6 +6,7 @@
 
 """Training/decoding definition for the speech recognition task."""
 
+import re
 import copy
 import json
 import logging
@@ -38,6 +39,8 @@ from espnet.asr.pytorch_backend.asr_init import freeze_modules
 from espnet.asr.pytorch_backend.asr_init import load_trained_model
 from espnet.asr.pytorch_backend.asr_init import load_trained_modules
 import espnet.lm.pytorch_backend.extlm as extlm_pytorch
+
+
 from espnet.nets.asr_interface import ASRInterface
 from espnet.nets.pytorch_backend.e2e_asr import pad_list
 import espnet.nets.pytorch_backend.lm.default as lm_pytorch
@@ -46,12 +49,26 @@ from espnet.nets.pytorch_backend.streaming.window import WindowStreamingE2E
 from espnet.transform.spectrogram import IStft
 from espnet.transform.transformation import Transformation
 from espnet.utils.cli_writers import file_writer_helper
-from espnet.utils.dataset import ChainerDataLoader
-from espnet.utils.dataset import TransformDataset
+
+# from espnet.utils.dataset import ChainerDataLoader
+# from espnet.utils.dataset import TransformDataset
+
+from espnet.utils.dataset_multi import ChainerDataLoader
+from espnet.utils.dataset_multi import TransformDataset
+
+
 from espnet.utils.deterministic_utils import set_deterministic_pytorch
 from espnet.utils.dynamic_import import dynamic_import
-from espnet.utils.io_utils import LoadInputsAndTargets
-from espnet.utils.training.batchfy import make_batchset
+
+# from espnet.utils.io_utils import LoadInputsAndTargets
+from espnet.utils.io_utils_multi import LoadInputsAndTargets
+
+
+
+# from espnet.utils.training.batchfy import make_batchset
+from espnet.utils.training.batchfy_multi import make_batchset
+
+
 from espnet.utils.training.evaluator import BaseEvaluator
 from espnet.utils.training.iterators import ShufflingEnabler
 from espnet.utils.training.tensorboard_logger import TensorboardLogger
@@ -201,12 +218,8 @@ class CustomUpdater(StandardUpdater):
         # Compute the loss at this time step and accumulate it
         if self.ngpu == 0:
             loss = self.model(*x).mean() / self.accum_grad
-            # * 代表，接收任意多变量，并转化成元组。
         else:
             # apex does not support torch.nn.DataParallel
-            # loss = (
-            #     data_parallel(self.model, x, range(self.ngpu)).mean() / self.accum_grad
-            # )
             loss = (
                 data_parallel(self.model, x, range(self.ngpu)).mean() / self.accum_grad
             )
@@ -406,13 +419,19 @@ def train(args):
         logging.warning("cuda is not available")
 
     # get input and output dimension info
-    with open(args.valid_json, "rb") as f:
-        valid_json = json.load(f)["utts"]
-    utts = list(valid_json.keys())
+    with open(args.valid_json_head, "rb") as f:
+        valid_json_head = json.load(f)["utts"]
+
+    utts = list(valid_json_head.keys())
+
+    # idm_list: [83]
     idim_list = [
-        int(valid_json[utts[0]]["input"][i]["shape"][-1]) for i in range(args.num_encs)
+        int(valid_json_head[utts[0]]["input"][i]["shape"][-1]) for i in range(args.num_encs)
     ]
-    odim = int(valid_json[utts[0]]["output"][0]["shape"][-1])
+
+    # odim: 1210
+    odim = int(valid_json_head[utts[0]]["output"][0]["shape"][-1])
+
     if hasattr(args, "decoder_mode") and args.decoder_mode == "maskctc":
         odim += 1  # for the <mask> token
     for i in range(args.num_encs):
@@ -434,19 +453,27 @@ def train(args):
         mtl_mode = "mtl"
         logging.info("Multitask learning mode")
 
+    # Load pretrained model
     if (args.enc_init is not None or args.dec_init is not None) and args.num_encs == 1:
-        model = load_trained_modules(idim_list[0], odim, args)  # !!!读取预训练模型
-        # # 定义使用预训练模型作为训练模型
+        # idim(int): initial input dimension
+        # odim(int): initial output dimension
+        # args(Namespace): the initial model arguments
+        model = load_trained_modules(idim_list[0], odim, args)
+
+        # model = load_trained_modules(idim_list[0], odim, args)  #读取预训练模型
+        # 定义使用预训练模型作为训练模型
+
         # model, pre_args = load_trained_model(
-        #     'exp/trainset_pytorch_train_specaug/pretrained_model/model.val5.avg.best')
+        #     'exp/train_array_head_pytorch_train_specaug/pretrained_model/model.val5.avg.best')
+
+        # # chaoyue
         # # 导入预训练模型及其args
         # model.odim = odim
         # model.sos = odim - 1
         # model.eos = odim - 1
-
-        # # # 冻结模型参数
-        # # for param in model.parameters():
-        # #     param.requires_grad = False
+        # # 冻结模型参数
+        # for param in model.parameters():
+        #     param.requires_grad = False
         # # 新创建的模块的参数不会冻结
         # model.decoder.output_layer = nn.Linear(512, odim)
         # model.ctc.ctc_lo = nn.Linear(512, odim)  # !!!不确定需不需要
@@ -456,13 +483,13 @@ def train(args):
         # model.decoder.output_layer.weight = torch.nn.Parameter(
         #     torch.nn.init.normal(torch.FloatTensor(odim, 512)))
         # model.decoder.output_layer.bias = torch.nn.Parameter(
-        #     torch.nn.init.normal(torch.FloatTensor(odim)))
+        #     torch.nn.init.normal(torch.FloatTensor(1190)))
         # model.decoder.embed[0].weight = torch.nn.Parameter(
         #     torch.nn.init.normal(torch.FloatTensor(odim, 512)))
         # model.ctc.ctc_lo.weight = torch.nn.Parameter(
         #     torch.nn.init.normal(torch.FloatTensor(odim, 512)))
         # model.ctc.ctc_lo.bias = torch.nn.Parameter(
-        #     torch.nn.init.normal(torch.FloatTensor(odim)))
+        #     torch.nn.init.normal(torch.FloatTensor(1190)))
         # # model.decoder.embed[0].weight.requires_grad = True
         # # model.ctc.ctc_lo.weight.requires_gLrad = True
         # # model.ctc.ctc_lo.bias.requires_grad = True
@@ -474,7 +501,7 @@ def train(args):
         # for param in model.ctc.ctc_lo.parameters():
         #     param.requires_grad = True
         # # pre_args.char_list = args.char_list
-
+        # # end chaoyue
     else:
         model_class = dynamic_import(args.model_module)  # 定义新模型
         model = model_class(
@@ -536,9 +563,11 @@ def train(args):
         dtype = torch.float32
     model = model.to(device=device, dtype=dtype)
 
+    # Freeze model parameters: default is None
     if args.freeze_mods:
         model, model_params = freeze_modules(model, args.freeze_mods)
     else:
+        # trainable
         model_params = model.parameters()
 
     # Setup an optimizer
@@ -598,12 +627,75 @@ def train(args):
         )
 
     # read json data
-    with open(args.train_json, "rb") as f:  # 读取训练集数据，之后存入trainer中
-        train_json = json.load(f)["utts"]
-    with open(args.valid_json, "rb") as f:  # 读取验证集数据
-        valid_json = json.load(f)["utts"]
+    with open(args.train_json_array, "rb") as f:  # 读取训练集数据，之后存入trainer中
+        train_json_array = json.load(f)["utts"]
+    with open(args.train_json_head, "rb") as f:  # 读取训练集数据，之后存入trainer中
+        train_json_head = json.load(f)["utts"]
 
+    with open(args.valid_json_array, "rb") as f:  # 读取验证集数据
+        valid_json_array = json.load(f)["utts"]
+    with open(args.valid_json_head, "rb") as f:  # 读取验证集数据
+        valid_json_head = json.load(f)["utts"]
+
+    # combine array dysarthric and head dysarthric
+
+    # todo check
+    # initialize a empty dict
+    train_json = dict()
+    print("Length of  train_json_array is {}, Length of  train_json_head is {}; ".format(
+        len(train_json_array.keys()), len(train_json_head.keys())))
+    num_train = 0
+    for key2 in train_json_head.keys():
+        # head match e.g., 'FO1'
+        # tail match e.g., '0013'
+        head = key2[:3]
+        tail = key2[-4:]
+        if re.search(r'{0}(\S*){1}(.*?)'.format(head, tail), ' '.join(list(train_json_array.keys()))):
+            num_train += 1
+            key1 = re.search(r'{0}(\S*){1}(.*?)'.format(head, tail),
+                             ' '.join(list(train_json_array.keys()))).group()
+            # print("key1:{0} key2:{1}".format(key1,key2))
+            # assert train_json_array[key1]['output'] == train_json_head[key2]['output']
+            train_json[key1 + "-" + key2] = {
+                "input": [{"array_feat": train_json_array[key1]['input'][0]["feat"],
+                           "head_feat":train_json_head[key2]['input'][0]["feat"],
+                           "array_shape":train_json_array[key1]['input'][0]["shape"],
+                           "head_shape":train_json_head[key2]['input'][0]["shape"] ,
+                           "name":"input1"}],
+                "output": train_json_head[key2]['output'],
+                "utt2spk": train_json_head[key2]['utt2spk']}
+    print("Filter total number of training pair {} ".format(num_train))
+
+    # todo tocheck
+    # initialize a empty dict
+    valid_json = {}
+    print("Length of  valid_json_array is {}, Length of  valid_json_head is {}; ".format(
+        len(valid_json_array.keys()), len(valid_json_head.keys())))
+    num_valid = 0
+    for key2 in valid_json_head.keys():
+        # head match e.g., 'FO1'
+        # tail match e.g., '0013'
+        head = key2[:3]
+        tail = key2[-4:]
+        if re.search(r'{0}(\S*){1}(.*?)'.format(head, tail), ' '.join(list(valid_json_array.keys()))):
+            num_valid += 1
+            key1 = re.search(r'{0}(\S*){1}(.*?)'.format(head, tail),
+                             ' '.join(list(valid_json_array.keys()))).group()
+            # print("key1:{0} key2:{1}".format(key1,key2))
+            # assert valid_json_array[key1]['output'] == valid_json_head[key2]['output']
+            valid_json[key1 + "-" + key2] = {
+                "input": [{"array_feat": valid_json_array[key1]['input'][0]["feat"],
+                           "head_feat":valid_json_head[key2]['input'][0]["feat"],
+                           "array_shape":valid_json_array[key1]['input'][0]["shape"],
+                           "head_shape":valid_json_head[key2]['input'][0]["shape"] ,
+                           "name":"input1"}],
+                "output": valid_json_head[key2]['output'],
+                "utt2spk": valid_json_head[key2]['utt2spk']}
+    print("Filter total number of valid pair {} ".format(num_valid))
+    
+    
     use_sortagrad = args.sortagrad == -1 or args.sortagrad > 0
+
     # make minibatch list (variable length)
     train = make_batchset(
         train_json,
@@ -621,6 +713,7 @@ def train(args):
         iaxis=0,
         oaxis=0,
     )
+
     valid = make_batchset(
         valid_json,
         args.batch_size,
@@ -650,7 +743,7 @@ def train(args):
         preprocess_args={"train": False},  # Switch the mode of preprocessing
     )
     # hack to make batchsize argument as 1
-    # actual batchsize is included in a list
+    # actual bathsize is included in a list
     # default collate function converts numpy array to pytorch tensor
     # we used an empty collate function instead which returns list
     train_iter = ChainerDataLoader(
@@ -714,7 +807,7 @@ def train(args):
     if args.num_save_attention > 0 and is_attn_plot:
         data = sorted(
             list(valid_json.items())[: args.num_save_attention],
-            key=lambda x: int(x[1]["input"][0]["shape"][1]),
+            key=lambda x: max(int(x[1]["input"][0]["array_shape"][1]),int(x[1]["input"][0]["head_shape"][1])),
             reverse=True,
         )
         if hasattr(model, "module"):

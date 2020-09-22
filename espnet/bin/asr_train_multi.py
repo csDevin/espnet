@@ -112,16 +112,28 @@ def get_parser(parser=None, required=True):
     )
     # task related
     parser.add_argument(
-        "--train-json",
+        "--train-json-array",
         type=str,
         default=None,
-        help="Filename of train label data (json)",
+        help="Filename of train label data (json, array dysarthric)",
     )
     parser.add_argument(
-        "--valid-json",
+        "--valid-json-array",
         type=str,
         default=None,
-        help="Filename of validation label data (json)",
+        help="Filename of validation label data (json, array dysarthric)",
+    )
+    parser.add_argument(
+        "--train-json-head",
+        type=str,
+        default=None,
+        help="Filename of train label data (json, head dysarthric)",
+    )
+    parser.add_argument(
+        "--valid-json-head",
+        type=str,
+        default=None,
+        help="Filename of validation label data (json, head dysarthric)",
     )
     # network architecture
     parser.add_argument(
@@ -360,8 +372,7 @@ def get_parser(parser=None, required=True):
     # finetuning related
     parser.add_argument(
         "--enc-init",
-        # default=None,
-        default="pretrain",
+        default=None,
         type=str,
         help="Pre-trained ASR model to initialize encoder.",
     )
@@ -373,8 +384,7 @@ def get_parser(parser=None, required=True):
     )
     parser.add_argument(
         "--dec-init",
-        # default=None,
-        default="pretrain",
+        default=None,
         type=str,
         help="Pre-trained ASR, MT or LM model to initialize decoder.",
     )
@@ -521,9 +531,9 @@ def get_parser(parser=None, required=True):
 
 
 def main(cmd_args):
-    os.chdir("/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/")
+    os.chdir("/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo_multi/asr1/")
     os.system("pwd")
-    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     """Run the main training function."""
     parser = get_parser()
     args, _ = parser.parse_known_args(cmd_args)
@@ -620,11 +630,11 @@ def main(cmd_args):
 
     if args.num_spkrs == 1:
         if args.backend == "chainer":
-            from espnet.asr.chainer_backend.asr import train
+            from espnet.asr.chainer_backend.asr_multi import train
 
             train(args)
         elif args.backend == "pytorch":
-            from espnet.asr.pytorch_backend.asr import train
+            from espnet.asr.pytorch_backend.asr_multi import train
 
             train(args)  # running this
         else:

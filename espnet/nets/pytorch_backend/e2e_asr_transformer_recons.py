@@ -17,8 +17,8 @@ from espnet.nets.ctc_prefix_score import CTCPrefixScore
 from espnet.nets.e2e_asr_common import end_detect
 from espnet.nets.e2e_asr_common import ErrorCalculator
 from espnet.nets.pytorch_backend.ctc import CTC
-from espnet.nets.pytorch_backend.e2e_asr import CTC_LOSS_THRESHOLD
-from espnet.nets.pytorch_backend.e2e_asr import Reporter
+from espnet.nets.pytorch_backend.e2e_asr_recons import CTC_LOSS_THRESHOLD
+from espnet.nets.pytorch_backend.e2e_asr_recons import Reporter
 from espnet.nets.pytorch_backend.nets_utils import get_subsample
 from espnet.nets.pytorch_backend.nets_utils import make_non_pad_mask
 from espnet.nets.pytorch_backend.nets_utils import th_accuracy
@@ -311,15 +311,22 @@ class E2E(ASRInterface, torch.nn.Module):
             self.error_calculator = None
         self.rnnlm = None
 
+        # self.convert_hs_pad = torch.nn.Linear(512, 83)
+        self.gru = torch.nn.GRU(512, 83, 2)  # 输入，输出（或隐层），层数
+        self.loss_fn = torch.nn.MSELoss()
+
     def reset_parameters(self, args):
         """Initialize parameters."""
         # initialize parameters
         initialize(self, args.transformer_init)
 
     def forward(self, xs_pad, ilens, ys_pad):
+        # 假设ys_pad_dae等于Lmax
+        # ilens是seq_len
         """E2E forward.
 
         :param torch.Tensor xs_pad: batch of padded source sequences (B, Tmax, idim)
+        B: batch_size，代表多少句话; Tmax: 最大帧长; Lmax: 最大句子长; ilens每句语音的帧长
         :param torch.Tensor ilens: batch of lengths of source sequences (B)
         :param torch.Tensor ys_pad: batch of padded target sequences (B, Lmax)
         :return: ctc loss value
@@ -329,13 +336,25 @@ class E2E(ASRInterface, torch.nn.Module):
         :return: accuracy in attention decoder
         :rtype: float
         """
+        batch_size = int(xs_pad.shape[0])
+        assert int(xs_pad.shape[1]) == int(max(ilens))
+        seq_len = int(max(ilens))
+        out_dim = int(xs_pad.shape[2])
+
         # 1. forward encoder
         xs_pad = xs_pad[:, : max(ilens)]  # for data parallel
         src_mask = make_non_pad_mask(ilens.tolist()).to(xs_pad.device).unsqueeze(-2)
         hs_pad, hs_mask = self.encoder(xs_pad, src_mask)
-        self.hs_pad = hs_pad
+        self.hs_pad = hs_pad  # (a,b,c)
 
-        
+        # 2.0. forward DAE decoder
+        y_dae, _ = self.gru(self.hs_pad)
+        # 对y_dae补全成xs_pad
+        pad_n = int(xs_pad.shape[1] - y_dae.shape[1])
+        zeroPad = torch.nn.ZeroPad2d((0,0,0,pad_n))
+        y_dae_pad = zeroPad(y_dae)
+        loss_dae = self.loss_fn(y_dae_pad, xs_pad)
+
         # 2. forward decoder
         if self.decoder is not None:
             if self.decoder_mode == "maskctc":
@@ -394,14 +413,16 @@ class E2E(ASRInterface, torch.nn.Module):
             loss_att_data = None
             loss_ctc_data = float(loss_ctc)
         else:
-            self.loss = alpha * loss_ctc + (1 - alpha) * loss_att
+            # self.loss = alpha * loss_ctc + (1 - alpha) * loss_att
+            self.loss = alpha * loss_ctc + (1 - alpha) * loss_att + 0.2 * loss_dae
             loss_att_data = float(loss_att)
             loss_ctc_data = float(loss_ctc)
+            loss_dae_data = float(loss_dae)
 
         loss_data = float(self.loss)
         if loss_data < CTC_LOSS_THRESHOLD and not math.isnan(loss_data):
             self.reporter.report(
-                loss_ctc_data, loss_att_data, self.acc, cer_ctc, cer, wer, loss_data
+                loss_ctc_data, loss_att_data, self.acc, cer_ctc, cer, wer, loss_data, loss_dae_data
             )
         else:
             logging.warning("loss (=%f) is not correct", loss_data)
