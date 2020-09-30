@@ -32,7 +32,8 @@ def freeze_modules(model, modules):
         if any(mod.startswith(m) for m in modules):
             logging.info(f"freezing {mod}, it will not be updated.")
             param.requires_grad = False
-
+    # print(list(filter(lambda x: True,[1,2,3,4,5,6,7,8,9,10])))
+    # Return: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     model_params = filter(lambda x: x.requires_grad, model.parameters())
 
     return model, model_params
@@ -253,9 +254,6 @@ def load_trained_modules(idim, odim, args, interface=ASRInterface):
     main_model = model_class(idim, odim, args)
     assert isinstance(main_model, interface)
 
-    # pre_model, pre_args = load_trained_model('/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo_multi/asr1/exp/train_array_head_pytorch_train_specaug/pretrained_model/model.val5.avg.best')  # 导入预训练模型及其args
-    # assert isinstance(pre_model, ASRInterface)
-
     main_state_dict = main_model.state_dict()
 
     logging.warning("model(s) found for pre-initialization")
@@ -269,6 +267,13 @@ def load_trained_modules(idim, odim, args, interface=ASRInterface):
 
                 # modules = filter_modules(model_state_dict, modules)  # 过滤不匹配的模块
                 modules = filter_modules(model_state_dict, main_state_dict)
+                # 删除包含维度为5002的字典值
+                modules.remove('decoder.output_layer.weight')
+                modules.remove('decoder.output_layer.bias')
+                modules.remove('decoder.embed.0.weight')
+                modules.remove('ctc.ctc_lo.weight')
+                modules.remove('ctc.ctc_lo.bias')
+
 
                 if is_lm:
                     partial_state_dict, modules = get_partial_lm_state_dict(

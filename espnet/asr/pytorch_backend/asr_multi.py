@@ -296,14 +296,18 @@ class CustomConverter(object):
 
         # perform subsampling
         if self.subsampling_factor > 1:
-            xs = [x[:: self.subsampling_factor, :] for x in xs]
+            # xs = [x[:: self.subsampling_factor, :] for x in xs]
+            xs = [(x1[:: self.subsampling_factor, :],x2[:: self.subsampling_factor, :]) for x1,x2 in xs]
 
         # get batch of lengths of input sequences
-        ilens = np.array([x.shape[0] for x in xs])
+        array_ilens = np.array([x[0].shape[0] for x in xs])
+        head_ilens = np.array([x[1].shape[0] for x in xs])
+
 
         # perform padding and convert to tensor
         # currently only support real number
-        if xs[0].dtype.kind == "c":
+        if xs[0][0].dtype.kind == "c" and xs[0][1].dtype.kind == "c":
+            # default is false
             xs_pad_real = pad_list(
                 [torch.from_numpy(x.real).float() for x in xs], 0
             ).to(device, dtype=self.dtype)
@@ -316,11 +320,17 @@ class CustomConverter(object):
             # because torch.nn.DataParellel can't handle it.
             xs_pad = {"real": xs_pad_real, "imag": xs_pad_imag}
         else:
-            xs_pad = pad_list([torch.from_numpy(x).float() for x in xs], 0).to(
+            xs_pad_array = pad_list([torch.from_numpy(x).float() for x,_ in xs], 0).to(
+                device, dtype=self.dtype
+            )
+            xs_pad_head = pad_list([torch.from_numpy(x).float() for _,x in xs], 0).to(
                 device, dtype=self.dtype
             )
 
-        ilens = torch.from_numpy(ilens).to(device)
+
+        ilens_array = torch.from_numpy(array_ilens).to(device)
+        ilens_head = torch.from_numpy(head_ilens).to(device)
+
         # NOTE: this is for multi-output (e.g., speech translation)
         ys_pad = pad_list(
             [
@@ -332,7 +342,7 @@ class CustomConverter(object):
             self.ignore_id,
         ).to(device)
 
-        return xs_pad, ilens, ys_pad
+        return xs_pad_array, ilens_array, xs_pad_head, ilens_head, ys_pad
 
 
 class CustomConverterMulEnc(object):
@@ -626,19 +636,25 @@ def train(args):
             [i[0] for i in model.subsample_list], dtype=dtype
         )
 
-    # read json data
+    # read training json data
     with open(args.train_json_array, "rb") as f:  # 读取训练集数据，之后存入trainer中
         train_json_array = json.load(f)["utts"]
     with open(args.train_json_head, "rb") as f:  # 读取训练集数据，之后存入trainer中
         train_json_head = json.load(f)["utts"]
-
+    # read validation json data
     with open(args.valid_json_array, "rb") as f:  # 读取验证集数据
         valid_json_array = json.load(f)["utts"]
     with open(args.valid_json_head, "rb") as f:  # 读取验证集数据
         valid_json_head = json.load(f)["utts"]
 
-    # combine array dysarthric and head dysarthric
+    # # Here test_json_array is equal to recog_json_array before split into gpus 
+    # with open(args.test_json_array, "rb") as f:  # 读取测试集数据
+    #     test_json_array = json.load(f)["utts"]
+    # with open(args.test_json_head, "rb") as f:  # 读取测试集数据
+    #     test_json_head = json.load(f)["utts"]
 
+
+    # combine array dysarthric and head dysarthric
     # todo check
     # initialize a empty dict
     train_json = dict()
@@ -648,23 +664,25 @@ def train(args):
     for key2 in train_json_head.keys():
         # head match e.g., 'FO1'
         # tail match e.g., '0013'
-        head = key2[:3]
-        tail = key2[-4:]
-        if re.search(r'{0}(\S*){1}(.*?)'.format(head, tail), ' '.join(list(train_json_array.keys()))):
-            num_train += 1
-            key1 = re.search(r'{0}(\S*){1}(.*?)'.format(head, tail),
-                             ' '.join(list(train_json_array.keys()))).group()
-            # print("key1:{0} key2:{1}".format(key1,key2))
-            # assert train_json_array[key1]['output'] == train_json_head[key2]['output']
-            train_json[key1 + "-" + key2] = {
-                "input": [{"array_feat": train_json_array[key1]['input'][0]["feat"],
-                           "head_feat":train_json_head[key2]['input'][0]["feat"],
-                           "array_shape":train_json_array[key1]['input'][0]["shape"],
-                           "head_shape":train_json_head[key2]['input'][0]["shape"] ,
-                           "name":"input1"}],
-                "output": train_json_head[key2]['output'],
-                "utt2spk": train_json_head[key2]['utt2spk']}
+        if re.match(r"(.*)headMic(.*?).*",key2,re.M|re.I):
+            head = key2[:3]
+            tail = key2[-4:]
+            if re.search(r'{0}(\S*){1}(.*?)'.format(head, tail), ' '.join(list(train_json_array.keys()))):
+                num_train += 1
+                key1 = re.search(r'{0}(\S*){1}(.*?)'.format(head, tail),
+                                ' '.join(list(train_json_array.keys()))).group()
+                # print("key1:{0} key2:{1}".format(key1,key2))
+                # assert train_json_array[key1]['output'] == train_json_head[key2]['output']
+                train_json[key1 + "-" + key2] = {
+                    "input": [{"array_feat": train_json_array[key1]['input'][0]["feat"],
+                            "head_feat":train_json_head[key2]['input'][0]["feat"],
+                            "array_shape":train_json_array[key1]['input'][0]["shape"],
+                            "head_shape":train_json_head[key2]['input'][0]["shape"] ,
+                            "name":"input1"}],
+                    "output": train_json_head[key2]['output'],
+                    "utt2spk": train_json_head[key2]['utt2spk']}
     print("Filter total number of training pair {} ".format(num_train))
+
 
     # todo tocheck
     # initialize a empty dict
@@ -675,25 +693,26 @@ def train(args):
     for key2 in valid_json_head.keys():
         # head match e.g., 'FO1'
         # tail match e.g., '0013'
-        head = key2[:3]
-        tail = key2[-4:]
-        if re.search(r'{0}(\S*){1}(.*?)'.format(head, tail), ' '.join(list(valid_json_array.keys()))):
-            num_valid += 1
-            key1 = re.search(r'{0}(\S*){1}(.*?)'.format(head, tail),
-                             ' '.join(list(valid_json_array.keys()))).group()
-            # print("key1:{0} key2:{1}".format(key1,key2))
-            # assert valid_json_array[key1]['output'] == valid_json_head[key2]['output']
-            valid_json[key1 + "-" + key2] = {
-                "input": [{"array_feat": valid_json_array[key1]['input'][0]["feat"],
-                           "head_feat":valid_json_head[key2]['input'][0]["feat"],
-                           "array_shape":valid_json_array[key1]['input'][0]["shape"],
-                           "head_shape":valid_json_head[key2]['input'][0]["shape"] ,
-                           "name":"input1"}],
-                "output": valid_json_head[key2]['output'],
-                "utt2spk": valid_json_head[key2]['utt2spk']}
+        if re.match(r"(.*)headMic(.*?).*",key2,re.M|re.I):
+            head = key2[:3]
+            tail = key2[-4:]
+            if re.search(r'{0}(\S*){1}(.*?)'.format(head, tail), ' '.join(list(valid_json_array.keys()))):
+                num_valid += 1
+                key1 = re.search(r'{0}(\S*){1}(.*?)'.format(head, tail),
+                                    ' '.join(list(valid_json_array.keys()))).group()
+                # print("key1:{0} key2:{1}".format(key1,key2))
+                # assert valid_json_array[key1]['output'] == valid_json_head[key2]['output']
+                valid_json[key1 + "-" + key2] = {
+                    "input": [{"array_feat": valid_json_array[key1]['input'][0]["feat"],
+                                "head_feat":valid_json_head[key2]['input'][0]["feat"],
+                                "array_shape":valid_json_array[key1]['input'][0]["shape"],
+                                "head_shape":valid_json_head[key2]['input'][0]["shape"] ,
+                                "name":"input1"}],
+                    "output": valid_json_head[key2]['output'],
+                    "utt2spk": valid_json_head[key2]['utt2spk']}
     print("Filter total number of valid pair {} ".format(num_valid))
     
-    
+
     use_sortagrad = args.sortagrad == -1 or args.sortagrad > 0
 
     # make minibatch list (variable length)
@@ -799,62 +818,65 @@ def train(args):
         )
 
     # Save attention weight at each epoch
-    is_attn_plot = (
-        mtl_mode in ["att", "mtl"]
-        or "transformer" in args.model_module
-        or "conformer" in args.model_module
-    )
-    if args.num_save_attention > 0 and is_attn_plot:
-        data = sorted(
-            list(valid_json.items())[: args.num_save_attention],
-            key=lambda x: max(int(x[1]["input"][0]["array_shape"][1]),int(x[1]["input"][0]["head_shape"][1])),
-            reverse=True,
-        )
-        if hasattr(model, "module"):
-            att_vis_fn = model.module.calculate_all_attentions
-            plot_class = model.module.attention_plot_class
-        else:
-            att_vis_fn = model.calculate_all_attentions
-            plot_class = model.attention_plot_class
-        att_reporter = plot_class(
-            att_vis_fn,
-            data,
-            args.outdir + "/att_ws",
-            converter=converter,
-            transform=load_cv,
-            device=device,
-        )
-        trainer.extend(att_reporter, trigger=(1, "epoch"))
-    else:
-        att_reporter = None
+    # is_attn_plot = (
+    #     mtl_mode in ["att", "mtl"]
+    #     or "transformer" in args.model_module
+    #     or "conformer" in args.model_module
+    # )
+    # if args.num_save_attention > 0 and is_attn_plot:
+    #     data = sorted(
+    #         list(valid_json.items())[: args.num_save_attention],
+    #         key=lambda x: max(int(x[1]["input"][0]["array_shape"][1]),int(x[1]["input"][0]["head_shape"][1])),
+    #         reverse=True,
+    #     )
+    #     if hasattr(model, "module"):
+    #         att_vis_fn = model.module.calculate_all_attentions
+    #         plot_class = model.module.attention_plot_class
+    #     else:
+    #         att_vis_fn = model.calculate_all_attentions
+    #         plot_class = model.attention_plot_class
+    #     att_reporter = plot_class(
+    #         att_vis_fn,
+    #         data,
+    #         args.outdir + "/att_ws",
+    #         converter=converter,
+    #         transform=load_cv,
+    #         device=device,
+    #     )
+    #     # cancel extend
+    #     trainer.extend(att_reporter, trigger=(1, "epoch"))
+ 
+    # else:
+    #     att_reporter = None
 
     # Save CTC prob at each epoch
-    if mtl_mode in ["ctc", "mtl"] and args.num_save_ctc > 0:
-        # NOTE: sort it by output lengths
-        data = sorted(
-            list(valid_json.items())[: args.num_save_ctc],
-            key=lambda x: int(x[1]["output"][0]["shape"][0]),
-            reverse=True,
-        )
-        if hasattr(model, "module"):
-            ctc_vis_fn = model.module.calculate_all_ctc_probs
-            plot_class = model.module.ctc_plot_class
-        else:
-            ctc_vis_fn = model.calculate_all_ctc_probs
-            plot_class = model.ctc_plot_class
-        ctc_reporter = plot_class(
-            ctc_vis_fn,
-            data,
-            args.outdir + "/ctc_prob",
-            converter=converter,
-            transform=load_cv,
-            device=device,
-            ikey="output",
-            iaxis=1,
-        )
-        trainer.extend(ctc_reporter, trigger=(1, "epoch"))
-    else:
-        ctc_reporter = None
+    # if mtl_mode in ["ctc", "mtl"] and args.num_save_ctc > 0:
+    #     # NOTE: sort it by output lengths
+    #     data = sorted(
+    #         list(valid_json.items())[: args.num_save_ctc],
+    #         key=lambda x: int(x[1]["output"][0]["shape"][0]),
+    #         reverse=True,
+    #     )
+    #     if hasattr(model, "module"):
+    #         ctc_vis_fn = model.module.calculate_all_ctc_probs
+    #         plot_class = model.module.ctc_plot_class
+    #     else:
+    #         ctc_vis_fn = model.calculate_all_ctc_probs
+    #         plot_class = model.ctc_plot_class
+    #     ctc_reporter = plot_class(
+    #         ctc_vis_fn,
+    #         data,
+    #         args.outdir + "/ctc_prob",
+    #         converter=converter,
+    #         transform=load_cv,
+    #         device=device,
+    #         ikey="output",
+    #         iaxis=1,
+    #     )
+    #     # cancel adding 
+    #     trainer.extend(ctc_reporter, trigger=(1, "epoch"))
+    # else:
+    #     ctc_reporter = None
 
     # Make a plot for training and validation values
     if args.num_encs > 1:
@@ -862,6 +884,9 @@ def train(args):
             "main/loss_ctc{}".format(i + 1) for i in range(model.num_encs)
         ] + ["validation/main/loss_ctc{}".format(i + 1) for i in range(model.num_encs)]
         report_keys_cer_ctc = [
+
+
+            
             "main/cer_ctc{}".format(i + 1) for i in range(model.num_encs)
         ] + ["validation/main/cer_ctc{}".format(i + 1) for i in range(model.num_encs)]
     trainer.extend(
@@ -1004,15 +1029,15 @@ def train(args):
     trainer.extend(extensions.ProgressBar(update_interval=args.report_interval_iters))
     set_early_stop(trainer, args)
 
-    if args.tensorboard_dir is not None and args.tensorboard_dir != "":
-        trainer.extend(
-            TensorboardLogger(
-                SummaryWriter(args.tensorboard_dir),
-                att_reporter=att_reporter,
-                ctc_reporter=ctc_reporter,
-            ),
-            trigger=(args.report_interval_iters, "iteration"),
-        )
+    # if args.tensorboard_dir is not None and args.tensorboard_dir != "":
+    #     trainer.extend(
+    #         TensorboardLogger(
+    #             SummaryWriter(args.tensorboard_dir),
+    #             att_reporter=att_reporter,
+    #             ctc_reporter=ctc_reporter,
+    #         ),
+    #         trigger=(args.report_interval_iters, "iteration"),
+    #     )
     # Run the training
     trainer.run()
     check_early_stop(trainer, args.epochs)

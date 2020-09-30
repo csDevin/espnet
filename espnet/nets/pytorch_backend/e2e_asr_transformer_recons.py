@@ -311,7 +311,6 @@ class E2E(ASRInterface, torch.nn.Module):
             self.error_calculator = None
         self.rnnlm = None
 
-        # self.convert_hs_pad = torch.nn.Linear(512, 83)
         self.gru = torch.nn.GRU(512, 83, 2)  # 输入，输出（或隐层），层数
         self.loss_fn = torch.nn.MSELoss()
 

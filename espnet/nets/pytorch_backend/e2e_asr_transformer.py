@@ -39,7 +39,10 @@ from espnet.nets.pytorch_backend.transformer.label_smoothing_loss import (
 )
 from espnet.nets.pytorch_backend.transformer.mask import subsequent_mask
 from espnet.nets.pytorch_backend.transformer.mask import target_mask
+
 from espnet.nets.pytorch_backend.transformer.plot import PlotAttentionReport
+
+
 from espnet.nets.scorers.ctc import CTCPrefixScorer
 from espnet.utils.fill_missing_args import fill_missing_args
 

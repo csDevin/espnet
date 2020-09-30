@@ -12,6 +12,9 @@ import logging
 import math
 import os
 import sys
+import numpy as np
+import re
+
 
 from chainer import reporter as reporter_module
 from chainer import training
@@ -51,7 +54,11 @@ from espnet.utils.dataset import TransformDataset
 from espnet.utils.deterministic_utils import set_deterministic_pytorch
 from espnet.utils.dynamic_import import dynamic_import
 from espnet.utils.io_utils import LoadInputsAndTargets
-from espnet.utils.training.batchfy import make_batchset
+
+
+# from espnet.utils.training.batchfy import make_batchset
+from espnet.utils.training.batchfy_recons import make_batchset
+
 from espnet.utils.training.evaluator import BaseEvaluator
 from espnet.utils.training.iterators import ShufflingEnabler
 from espnet.utils.training.tensorboard_logger import TensorboardLogger
@@ -438,15 +445,15 @@ def train(args):
         model = load_trained_modules(idim_list[0], odim, args)  # !!!读取预训练模型
         # # 定义使用预训练模型作为训练模型
         # model, pre_args = load_trained_model(
-        #     'exp/trainset_pytorch_train_specaug/pretrained_model/model.val5.avg.best')
+        #     'pretrained/medium/model.val5.avg.best')
         # # 导入预训练模型及其args
         # model.odim = odim
         # model.sos = odim - 1
         # model.eos = odim - 1
 
-        # # # 冻结模型参数
-        # # for param in model.parameters():
-        # #     param.requires_grad = False
+        # 冻结模型参数
+        for param in model.parameters():
+            param.requires_grad = False
         # # 新创建的模块的参数不会冻结
         # model.decoder.output_layer = nn.Linear(512, odim)
         # model.ctc.ctc_lo = nn.Linear(512, odim)  # !!!不确定需不需要
@@ -466,14 +473,15 @@ def train(args):
         # # model.decoder.embed[0].weight.requires_grad = True
         # # model.ctc.ctc_lo.weight.requires_gLrad = True
         # # model.ctc.ctc_lo.bias.requires_grad = True
-        # # 解冻参数
-        # for param in model.decoder.output_layer.parameters():
-        #     param.requires_grad = True
-        # for param in model.decoder.embed.parameters():
-        #     param.requires_grad = True
-        # for param in model.ctc.ctc_lo.parameters():
-        #     param.requires_grad = True
-        # # pre_args.char_list = args.char_list
+        # 解冻参数
+        for param in model.decoder.output_layer.parameters():
+            param.requires_grad = True
+        for param in model.decoder.embed.parameters():
+            param.requires_grad = True
+        for param in model.ctc.ctc_lo.parameters():
+            param.requires_grad = True
+        for param in model.gru.parameters():
+            param.requires_grad = True
 
     else:
         model_class = dynamic_import(args.model_module)  # 定义新模型
@@ -603,10 +611,71 @@ def train(args):
     with open(args.valid_json, "rb") as f:  # 读取验证集数据
         valid_json = json.load(f)["utts"]
 
+    # tocheck
+    train_json_new = dict()
+    # num_count = 0
+    print("Length of training data {0}".format(len(train_json)))
+    for key1 in train_json.keys():
+        if re.match(r"[A-Z]\d(.*?)", key1, re.M | re.I):
+            key_word = key1[-10:]
+            candidate = re.findall(r"([A-Z][A-Z]\d\d\S*%s)" %
+                                   key_word, " ".join(list(train_json.keys())))
+            match_keys = np.random.choice(candidate, 3)  # list
+            for key2 in match_keys:
+                train_json_new[key1 + '-' + key2] = {
+                    "input": [{"dys_feat": train_json[key1]['input'][0]["feat"],
+                               "hc_feat":train_json[key2]['input'][0]["feat"],
+                               "dys_shape":train_json[key1]['input'][0]["shape"],
+                               "hc_shape":train_json[key2]['input'][0]["shape"] ,
+                               "name":"input1"}],
+                    "output": train_json[key1]['output'],
+                    "utt2spk": train_json[key1]['utt2spk']}
+        else:
+            train_json_new[key1 + '-' + key1] = {
+                "input": [{"dys_feat": train_json[key1]['input'][0]["feat"],
+                           "hc_feat":train_json[key1]['input'][0]["feat"],
+                           "dys_shape":train_json[key1]['input'][0]["shape"],
+                           "hc_shape":train_json[key1]['input'][0]["shape"] ,
+                           "name":"input1"}],
+                "output": train_json[key1]['output'],
+                "utt2spk": train_json[key1]['utt2spk']}
+
+    print("Length of combing traing data {0}".format(len(train_json_new)))
+
+    # tocheck
+    valid_json_new = dict()
+    print("Length of valid data {0}".format(len(valid_json)))
+    for key1 in valid_json.keys():
+        if re.match(r"[A-Z]\d(.*?)", key1, re.M | re.I):
+            key_word = key1[-10:]
+            candidate = re.findall(r"([A-Z][A-Z]\d\d\S*%s)" %
+                                   key_word, " ".join(list(train_json.keys())))
+            match_keys = np.random.choice(candidate, 3)  # list
+            for key2 in match_keys:
+                valid_json_new[key1 + '-' + key2] = {
+                    "input": [{"dys_feat": valid_json[key1]['input'][0]["feat"],
+                               "hc_feat":train_json[key2]['input'][0]["feat"],
+                               "dys_shape":valid_json[key1]['input'][0]["shape"],
+                               "hc_shape":train_json[key2]['input'][0]["shape"] ,
+                               "name":"input1"}],
+                    "output": valid_json[key1]['output'],
+                    "utt2spk": valid_json[key1]['utt2spk']}
+        else:
+            valid_json_new[key1 + '-' + key1] = {
+                "input": [{"dys_feat": valid_json[key1]['input'][0]["feat"],
+                           "hc_feat":valid_json[key1]['input'][0]["feat"],
+                           "dys_shape":valid_json[key1]['input'][0]["shape"],
+                           "hc_shape":valid_json[key1]['input'][0]["shape"] ,
+                           "name":"input1"}],
+                "output": valid_json[key1]['output'],
+                "utt2spk": valid_json[key1]['utt2spk']}
+
+    print("Length of combing valid data {0}".format(len(valid_json_new)))
+
     use_sortagrad = args.sortagrad == -1 or args.sortagrad > 0
     # make minibatch list (variable length)
     train = make_batchset(
-        train_json,
+        train_json_new,
         args.batch_size,
         args.maxlen_in,
         args.maxlen_out,
@@ -622,7 +691,7 @@ def train(args):
         oaxis=0,
     )
     valid = make_batchset(
-        valid_json,
+        valid_json_new,
         args.batch_size,
         args.maxlen_in,
         args.maxlen_out,

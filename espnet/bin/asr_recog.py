@@ -221,13 +221,13 @@ def get_parser():
         default=0.999,
         help="Threshold probability for CTC output",
     )
-    # user added
-    parser.add_argument(
-        "--ndo",
-        type=int,
-        default=1234,
-        help="numbers of decoder output dim in run.sh",
-    )
+    # user added !!!
+    # parser.add_argument(
+    #     "--ndo",
+    #     type=int,
+    #     default=1234,
+    #     help="numbers of decoder output dim in run.sh",
+    # )
     parser.add_argument(
         "--nbpe",
         type=int,
@@ -239,10 +239,9 @@ def get_parser():
 
 
 def main(args):
-
     os.chdir("/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/")
     os.system("pwd")
-    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
     # logging.info("***********running asr_recog.py***********")
     """Run the main decoding function."""
     parser = get_parser()

@@ -26,6 +26,8 @@ test_spm.model
 .vscode*
 *.vim
 *.swp
+*.png
+*.log
 
 # recipe related
 egs*/*/*/data*

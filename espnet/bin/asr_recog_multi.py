@@ -81,8 +81,26 @@ def get_parser():
     )
     # task related
     parser.add_argument(
-        "--recog-json", type=str, help="Filename of recognition data (json)"
+        "--recog-json-array", type=str, help="Filename of recognition data (json)"
     )
+    parser.add_argument(
+        "--recog-json-head", type=str, help="Filename of recognition data (json)"
+    )
+
+    parser.add_argument(
+        "--valid-json-array", type=str, help="Filename of validation data (json)"
+    )
+    parser.add_argument(
+        "--valid-json-head", type=str, help="Filename of validation data (json)"
+    )
+
+    parser.add_argument(
+        "--test-json-array", type=str, help="Filename of test data (json)"
+    )
+    parser.add_argument(
+        "--test-json-head", type=str, help="Filename of test data (json)"
+    )
+    
     parser.add_argument(
         "--result-label",
         type=str,
@@ -242,7 +260,7 @@ def main(args):
 
     os.chdir("/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo_multi/asr1/")
     os.system("pwd")
-    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     # logging.info("***********running asr_recog.py***********")
     """Run the main decoding function."""
     parser = get_parser()

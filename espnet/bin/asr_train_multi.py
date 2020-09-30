@@ -135,6 +135,18 @@ def get_parser(parser=None, required=True):
         default=None,
         help="Filename of validation label data (json, head dysarthric)",
     )
+    parser.add_argument(
+        "--test-json-head",
+        type=str,
+        default=None,
+        help="Filename of test label data (json, head dysarthric)",
+    )
+    parser.add_argument(
+        "--test-json-array",
+        type=str,
+        default=None,
+        help="Filename of test label data (json, head dysarthric)",
+    )
     # network architecture
     parser.add_argument(
         "--model-module",
@@ -533,7 +545,7 @@ def get_parser(parser=None, required=True):
 def main(cmd_args):
     os.chdir("/home/dingchaoyue/speech/dysarthria/espnet/egs/torgo_multi/asr1/")
     os.system("pwd")
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     """Run the main training function."""
     parser = get_parser()
     args, _ = parser.parse_known_args(cmd_args)

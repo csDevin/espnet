@@ -36,7 +36,7 @@ recog_model=model.acc.best  # set a model to be used for decoding: 'model.acc.be
 lang_model=rnnlm.model.best # set a language model to be used for decoding
 
 # model average realted (only for transformer)
-n_average=5              # the number of ASR models to be averaged 要平均的ASR模型数
+n_average=5               # the number of ASR models to be averaged 要平均的ASR模型数
 use_valbest_average=false # !!!if true, the validation `n_average`-best ASR models will be averaged.
 # if false, the last `n_average` ASR models will be averaged.
 lm_n_average=0               # the number of languge models to be averaged
@@ -55,14 +55,14 @@ data_url=www.openslr.org/resources/12
 nbpe=1230 # 5000, dict.txt中单词tokens个数
 bpemode=unigram
 
-# decoder output dim
+# decoder output dim  !!!
 # ndo=(sed -n '$=' /home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/data/lang_char/trainset_unigram1230_units.txt)
 # ndo=`awk '{print NR}' /home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/data/lang_char/trainset_unigram1230_units.txt|tail -n1`
-ndo=1230
-ndo=0 # 1190
-while read line; do
-    ((ndo = ndo + 1))
-done </home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/data/lang_char/trainset_unigram${nbpe}_units.txt
+# ndo=1230
+# ndo=0 # 1190
+# while read line; do
+#     ((ndo = ndo + 1))
+# done </home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/data/lang_char/train_set_unigram${nbpe}_units.txt
 
 # exp tag
 tag="" # tag for managing experiments. 用于管理实验的标签。!!!
@@ -75,10 +75,10 @@ set -e
 set -u
 set -o pipefail
 
-train_set=trainset
-train_dev=devset
-recog_set="test_clean"
-# 测试集取名为test_clean，并没有实际意义
+train_set=train_set
+train_dev=valid_set
+recog_set="test"
+# test必须为原始文件夹名之一
 
 # if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
 #     echo "stage -1: Data Download"
@@ -112,14 +112,14 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     echo "stage 1: Feature Generation"
     fbankdir=fbank
     # Generate the fbank features; by default 80-dimensional fbanks with pitch on each frame
-    for x in test_clean dev_clean train_clean; do
+    for x in train test valid; do
         steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
             data/${x} exp/make_fbank/${x} ${fbankdir}
         utils/fix_data_dir.sh data/${x}
     done
 
-    utils/combine_data.sh --extra_files utt2num_frames data/${train_set}_org data/train_clean
-    utils/combine_data.sh --extra_files utt2num_frames data/${train_dev}_org data/dev_clean
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_set}_org data/train
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_dev}_org data/valid
 
     # remove utt having more than 3000 frames
     # remove utt having more than 400 character
@@ -146,7 +146,7 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
         data/${train_set}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/train ${feat_tr_dir}
     dump.sh --cmd "$train_cmd" --nj ${nj} --do_delta ${do_delta} \
         data/${train_dev}/feats.scp data/${train_set}/cmvn.ark exp/dump_feats/dev ${feat_dt_dir}
-        
+
     for rtask in ${recog_set}; do
         feat_recog_dir=${dumpdir}/${rtask}/delta${do_delta}
         mkdir -p ${feat_recog_dir}
@@ -261,13 +261,12 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --verbose ${verbose} \
         --resume ${resume} \
         --train-json ${feat_tr_dir}/data_${bpemode}${nbpe}.json \
-        --valid-json ${feat_dt_dir}/data_${bpemode}${nbpe}.json
-        --enc-init "exp/trainset_pytorch_train_specaug/pretrained_model/model.val5.avg.best"
-        --dec-init "exp/trainset_pytorch_train_specaug/pretrained_model/model.val5.avg.best"
+        --valid-json ${feat_dt_dir}/data_${bpemode}${nbpe}.json \
+        --enc-init "pretrained/medium/model.val5.avg.best" \
+        --dec-init "pretrained/medium/model.val5.avg.best"
 fi
 
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
-
     # You can skip this and remove --rnnlm option in the recognition (stage 5)!!!
     echo "stage 5: Decoding"
     if [[ $(get_yaml.py ${train_config} model-module) = *transformer* ]] ||
@@ -285,14 +284,12 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
             opt="--log"
         fi
 
-        # !!!禁用
-        # average_checkpoints.py \
-        #     ${opt} \
-        #     --backend ${backend} \
-        #     --snapshots ${expdir}/results/snapshot.ep.* \
-        #     --out ${expdir}/results/${recog_model} \
-        #     --num ${n_average}
-
+        average_checkpoints.py \
+            ${opt} \
+            --backend ${backend} \
+            --snapshots ${expdir}/results/snapshot.ep.* \
+            --out ${expdir}/results/${recog_model} \
+            --num ${n_average}
 
         # ${opt}: --log exp/trainset_pytorch_train_specaug/results/log
         # --backend pytorch
@@ -347,9 +344,9 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
                 --result-label ${expdir}/${decode_dir}/data.JOB.json \
                 --model ${expdir}/results/${recog_model} \
                 --api v2 \
-                --ndo ${ndo} \
                 --nbpe ${nbpe}
-            # --rnnlm ${lmexpdir}/${lang_model} \
+                # --ndo ${ndo} \
+                # --rnnlm ${lmexpdir}/${lang_model} \
 
             score_sclite.sh --bpe ${nbpe} --bpemodel ${bpemodel}.model --wer true \
                 ${expdir}/${decode_dir} ${dict}

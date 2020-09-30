@@ -1,5 +1,9 @@
-recog_set="test_set_array test_set_head"
-for rtask in ${recog_set}; do
-    echo ${rtask:9:1000}
+#!/bin/bash
+# decode_cycle="test"
+# for rtask in ${decode_cycle}; do
+#     echo ${rtask:9:1000}
+# done
 
+for x in data_org/F01/train data_org/F01/valid data_org/F01/test; do
+   echo data/${x}
 done
