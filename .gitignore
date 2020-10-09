@@ -28,6 +28,14 @@ test_spm.model
 *.swp
 *.png
 *.log
+*.npy
+data.*.json
+*.txt
+*.trn
+*.best
+log
+data.json
+*.bak2
 
 # recipe related
 egs*/*/*/data*

@@ -128,7 +128,8 @@ def batchfy_by_bin(
         next_size = 0
         max_olen = 0
         while next_size < batch_bins and (start + b) < length:
-            ilen = int(sorted_data[start + b][1][ikey][0]["shape"][0]) * idim
+            ilen = max(int(sorted_data[start + b][1][ikey][0]["dys_shape"][0]),
+                       int(sorted_data[start + b][1][ikey][0]["hc_shape"][0])) * idim
             olen = int(sorted_data[start + b][1][okey][0]["shape"][0]) * odim
             if olen > max_olen:
                 max_olen = olen

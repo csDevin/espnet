@@ -181,16 +181,16 @@ def recog_v2(args):
     print("Filter total number of training pair {} ".format(num_test))
 
 
-    # 修改decoding的utt个数
-    test_json = {}
-    count = 0
-    for k, v in test_json_complete.items():
-        # if js[k]['utt2spk'] == 'FC01':
-        if count < 2:
-            test_json[k] = v
-            count += 1
+    # # 修改decoding的utt个数
+    # test_json = {}
+    # count = 0
+    # for k, v in test_json_complete.items():
+    #     # if js[k]['utt2spk'] == 'FC01':
+    #     if count < 2:
+    #         test_json[k] = v
+    #         count += 1
 
-    # test_json=test_json_complete
+    test_json=test_json_complete
 
     new_test_json = {}
     with torch.no_grad():

@@ -11,7 +11,7 @@ backend=pytorch
 stage=-1 # start from -1 if you need to start from data download
 stop_stage=100
 ngpu=2 # number of gpus ("0" uses cpu, otherwise use gpu)
-nj=15  # number of cpu  32!!!
+nj=24  # number of cpu  32!!!
 debugmode=1
 dumpdir=dump # directory to dump full features
 N=0          # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
@@ -21,11 +21,14 @@ resume=      # Resume the training from snapshot
 # feature configuration
 do_delta=false
 
+# !!!选择预训练模型
+pretrain_model=pretrained/rnn_ctc
+
 preprocess_config=conf/specaug.yaml
-train_config=conf/train.yaml # current default recipe requires 4 gpus.
+train_config=${pretrain_model}/train.yaml # current default recipe requires 4 gpus.
 # if you do not have 4 gpus, please reconfigure the `batch-bins` and `accum-grad` parameters in config.
 lm_config=conf/lm.yaml
-decode_config=conf/decode.yaml
+decode_config=${pretrain_model}/decode.yaml
 
 # rnnlm related
 lm_resume= # specify a snapshot file to resume LM training
@@ -75,9 +78,9 @@ set -e
 set -u
 set -o pipefail
 
-train_set=train_set
-train_dev=valid_set
-recog_set="test"
+train_set=train_set_rnn
+train_dev=valid_set_rnn
+recog_set="test_rnn"
 # test必须为原始文件夹名之一
 
 # if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
@@ -112,14 +115,14 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     echo "stage 1: Feature Generation"
     fbankdir=fbank
     # Generate the fbank features; by default 80-dimensional fbanks with pitch on each frame
-    for x in train test valid; do
+    for x in train_rnn test_rnn valid_rnn; do
         steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
             data/${x} exp/make_fbank/${x} ${fbankdir}
         utils/fix_data_dir.sh data/${x}
     done
 
-    utils/combine_data.sh --extra_files utt2num_frames data/${train_set}_org data/train
-    utils/combine_data.sh --extra_files utt2num_frames data/${train_dev}_org data/valid
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_set}_org data/train_rnn
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_dev}_org data/valid_rnn
 
     # remove utt having more than 3000 frames
     # remove utt having more than 400 character
@@ -247,7 +250,7 @@ mkdir -p ${expdir}
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "stage 4: Network Training"
     ${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
-        asr_train.py \
+        asr_train_rnn.py \
         --config ${train_config} \
         --preprocess-conf ${preprocess_config} \
         --ngpu ${ngpu} \
@@ -262,8 +265,8 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --resume ${resume} \
         --train-json ${feat_tr_dir}/data_${bpemode}${nbpe}.json \
         --valid-json ${feat_dt_dir}/data_${bpemode}${nbpe}.json \
-        --enc-init "pretrained/medium/model.val5.avg.best" \
-        --dec-init "pretrained/medium/model.val5.avg.best"
+        --enc-init "${pretrain_model}/model.acc.best" \
+        --dec-init "${pretrain_model}/model.acc.best"
 fi
 
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
@@ -303,7 +306,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
         #     lang_model=rnnlm.model.best
         # else
         #     if ${use_lm_valbest_average}; then
-        #         lang_model=rnnlm.val${lm_n_average}.avg.best
+        #         lang_model=rnnlm.val${lm_n_average}.avg.bests
         #         opt="--log ${lmexpdir}/log"
         #     else
         #         lang_model=rnnlm.last${lm_n_average}.avg.best
@@ -335,7 +338,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
 
             # set batchsize 0 to disable batch decoding
             ${decode_cmd} JOB=1:${nj} ${expdir}/${decode_dir}/log/decode.JOB.log \
-                asr_recog.py \
+                asr_recog_rnn.py \
                 --config ${decode_config} \
                 --ngpu ${ngpu} \
                 --backend ${backend} \

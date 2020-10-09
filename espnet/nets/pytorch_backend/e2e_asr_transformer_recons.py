@@ -319,7 +319,7 @@ class E2E(ASRInterface, torch.nn.Module):
         # initialize parameters
         initialize(self, args.transformer_init)
 
-    def forward(self, xs_pad, ilens, ys_pad):
+    def forward(self, xs_pad,ilens,hc_pad,ys_pad):
         # 假设ys_pad_dae等于Lmax
         # ilens是seq_len
         """E2E forward.
@@ -335,10 +335,10 @@ class E2E(ASRInterface, torch.nn.Module):
         :return: accuracy in attention decoder
         :rtype: float
         """
-        batch_size = int(xs_pad.shape[0])
-        assert int(xs_pad.shape[1]) == int(max(ilens))
-        seq_len = int(max(ilens))
-        out_dim = int(xs_pad.shape[2])
+        # batch_size = int(xs_pad.shape[0])
+        # assert int(xs_pad.shape[1]) == int(max(ilens))
+        # seq_len = int(max(ilens))
+        # out_dim = int(xs_pad.shape[2])
 
         # 1. forward encoder
         xs_pad = xs_pad[:, : max(ilens)]  # for data parallel
@@ -346,13 +346,26 @@ class E2E(ASRInterface, torch.nn.Module):
         hs_pad, hs_mask = self.encoder(xs_pad, src_mask)
         self.hs_pad = hs_pad  # (a,b,c)
 
-        # 2.0. forward DAE decoder
-        y_dae, _ = self.gru(self.hs_pad)
-        # 对y_dae补全成xs_pad
-        pad_n = int(xs_pad.shape[1] - y_dae.shape[1])
-        zeroPad = torch.nn.ZeroPad2d((0,0,0,pad_n))
-        y_dae_pad = zeroPad(y_dae)
-        loss_dae = self.loss_fn(y_dae_pad, xs_pad)
+        # x->x，自xs_pad监督
+        # y_dae, _ = self.gru(self.hs_pad)
+        # # 对y_dae补全成xs_pad  !!!重构健康监督音障语音
+        # pad_n = int(xs_pad.shape[1] - y_dae.shape[1])
+        # zeroPad = torch.nn.ZeroPad2d((0,0,0,pad_n))
+        # y_dae_pad = zeroPad(y_dae)
+        # # loss_dae = self.loss_fn(y_dae_pad, xs_pad)
+        # loss_dae = self.loss_fn(y_dae_pad, xs_pad)
+
+        # # x->y，健康hc_pad监督
+        # y_dae, _ = self.gru(self.hs_pad)
+        # # 对y_dae补全成xs_pad  !!!loss健康监督音障语音
+        # pad_n = int(hc_pad.shape[1] - y_dae.shape[1])
+        # zeroPad = torch.nn.ZeroPad2d((0,0,0,pad_n))
+        # y_dae_pad = zeroPad(y_dae)
+        # # loss_dae = self.loss_fn(y_dae_pad, xs_pad)
+        # loss_dae = self.loss_fn(y_dae_pad, hc_pad)
+
+        # # 不使用dae
+        loss_dae=10000
 
         # 2. forward decoder
         if self.decoder is not None:
@@ -387,6 +400,9 @@ class E2E(ASRInterface, torch.nn.Module):
             batch_size = xs_pad.size(0)
             hs_len = hs_mask.view(batch_size, -1).sum(1)
             loss_ctc = self.ctc(hs_pad.view(batch_size, -1, self.adim), hs_len, ys_pad)
+            # hs_pad: hs_pad, hs_mask = self.encoder(xs_pad, src_mask)
+            # hs_len: hs_len = hs_mask.view(batch_size, -1).sum(1)
+            # ys_pad: word label
             if not self.training and self.error_calculator is not None:
                 ys_hat = self.ctc.argmax(hs_pad.view(batch_size, -1, self.adim)).data
                 cer_ctc = self.error_calculator(ys_hat.cpu(), ys_pad.cpu(), is_ctc=True)
@@ -412,8 +428,8 @@ class E2E(ASRInterface, torch.nn.Module):
             loss_att_data = None
             loss_ctc_data = float(loss_ctc)
         else:
-            # self.loss = alpha * loss_ctc + (1 - alpha) * loss_att
-            self.loss = alpha * loss_ctc + (1 - alpha) * loss_att + 0.2 * loss_dae
+            self.loss = alpha * loss_ctc + (1 - alpha) * loss_att
+            # self.loss = alpha * loss_ctc + (1 - alpha) * loss_att + 0.5 * loss_dae
             loss_att_data = float(loss_att)
             loss_ctc_data = float(loss_ctc)
             loss_dae_data = float(loss_dae)
