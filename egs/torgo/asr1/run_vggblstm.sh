@@ -11,7 +11,7 @@ backend=pytorch
 stage=-1 # start from -1 if you need to start from data download
 stop_stage=100
 ngpu=2 # number of gpus ("0" uses cpu, otherwise use gpu)
-nj=15  # number of cpu  32!!!
+nj=48  # number of cpu  32!!!
 debugmode=1
 dumpdir=dump # directory to dump full features
 N=0          # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
@@ -21,11 +21,14 @@ resume=      # Resume the training from snapshot
 # feature configuration
 do_delta=false
 
+# !!!选择预训练模型
+pretrain_model=pretrained/vggblstm
+
 preprocess_config=conf/specaug.yaml
-train_config=conf/train.yaml # current default recipe requires 4 gpus.
+train_config=${pretrain_model}/train.yaml # current default recipe requires 4 gpus.
 # if you do not have 4 gpus, please reconfigure the `batch-bins` and `accum-grad` parameters in config.
 lm_config=conf/lm.yaml
-decode_config=conf/decode.yaml
+decode_config=${pretrain_model}/decode.yaml
 
 # rnnlm related
 lm_resume= # specify a snapshot file to resume LM training
@@ -56,13 +59,13 @@ nbpe=1230 # 5000, dict.txt中单词tokens个数
 bpemode=unigram
 
 # decoder output dim  !!!
-# ndo=(sed -n '$=' /home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/data/lang_char/trainset_unigram1230_units.txt)
-# ndo=`awk '{print NR}' /home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/data/lang_char/trainset_unigram1230_units.txt|tail -n1`
+# ndo=(sed -n '$=' /home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/data/lang_char_vggblstm/trainset_unigram1230_units.txt)
+# ndo=`awk '{print NR}' /home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/data/lang_char_vggblstm/trainset_unigram1230_units.txt|tail -n1`
 # ndo=1230
 # ndo=0 # 1190
 # while read line; do
 #     ((ndo = ndo + 1))
-# done </home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/data/lang_char/train_set_unigram${nbpe}_units.txt
+# done </home/dingchaoyue/speech/dysarthria/espnet/egs/torgo/asr1/data/lang_char_vggblstm/train_set_unigram${nbpe}_units.txt
 
 # exp tag
 tag="" # tag for managing experiments. 用于管理实验的标签。!!!
@@ -75,9 +78,9 @@ set -e
 set -u
 set -o pipefail
 
-train_set=train_set
-train_dev=valid_set
-recog_set="test"
+train_set=train_set_vggblstm
+train_dev=valid_set_vggblstm
+recog_set="test_vggblstm"
 # test必须为原始文件夹名之一
 
 # if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
@@ -106,20 +109,20 @@ feat_dt_dir=${dumpdir}/${train_dev}/delta${do_delta}
 mkdir -p ${feat_dt_dir}
 # dumpdir=dump; train_set=trainset; do_delta=false
 
-if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then  # stpe 1
+if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
     ### Task dependent. You have to design training and dev sets by yourself.
     ### But you can utilize Kaldi recipes in most cases
     echo "stage 1: Feature Generation"
     fbankdir=fbank
     # Generate the fbank features; by default 80-dimensional fbanks with pitch on each frame
-    for x in train test valid; do
+    for x in train_vggblstm test_vggblstm valid_vggblstm; do
         steps/make_fbank_pitch.sh --cmd "$train_cmd" --nj ${nj} --write_utt2num_frames true \
             data/${x} exp/make_fbank/${x} ${fbankdir}
         utils/fix_data_dir.sh data/${x}
     done
 
-    utils/combine_data.sh --extra_files utt2num_frames data/${train_set}_org data/train
-    utils/combine_data.sh --extra_files utt2num_frames data/${train_dev}_org data/valid
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_set}_org data/train_vggblstm
+    utils/combine_data.sh --extra_files utt2num_frames data/${train_dev}_org data/valid_vggblstm
 
     # remove utt having more than 3000 frames
     # remove utt having more than 400 character
@@ -156,17 +159,17 @@ if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then  # stpe 1
     done
 fi
 
-dict=data/lang_char/${train_set}_${bpemode}${nbpe}_units.txt # 发音词典
-# dict=data/lang_char/trainset_unigram5000_units.txt
-bpemodel=data/lang_char/${train_set}_${bpemode}${nbpe}
-if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then  # stpe 2
+dict=data/lang_char_vggblstm/${train_set}_${bpemode}${nbpe}_units.txt # 发音词典
+# dict=data/lang_char_vggblstm/trainset_unigram5000_units.txt
+bpemodel=data/lang_char_vggblstm/${train_set}_${bpemode}${nbpe}
+if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
     ### Task dependent. You have to check non-linguistic symbols used in the corpus.
     echo "stage 2: Dictionary and Json Data Preparation"
-    mkdir -p data/lang_char/
+    mkdir -p data/lang_char_vggblstm/
     echo "<unk> 1" >${dict} # <unk> must be 1, 0 will be used for "blank" in CTC
-    cut -f 2- -d" " data/${train_set}/text >data/lang_char/input.txt
-    spm_train --input=data/lang_char/input.txt --vocab_size=${nbpe} --model_type=${bpemode} --model_prefix=${bpemodel} --input_sentence_size=100000000 --hard_vocab_limit=false
-    spm_encode --model=${bpemodel}.model --output_format=piece <data/lang_char/input.txt | tr ' ' '\n' | sort | uniq | awk '{print $0 " " NR+1}' >>${dict}
+    cut -f 2- -d" " data/${train_set}/text >data/lang_char_vggblstm/input.txt
+    spm_train --input=data/lang_char_vggblstm/input.txt --vocab_size=${nbpe} --model_type=${bpemode} --model_prefix=${bpemodel} --input_sentence_size=100000000 --hard_vocab_limit=false
+    spm_encode --model=${bpemodel}.model --output_format=piece <data/lang_char_vggblstm/input.txt | tr ' ' '\n' | sort | uniq | awk '{print $0 " " NR+1}' >>${dict}
     wc -l ${dict}
 
     # make json labels
@@ -247,7 +250,7 @@ mkdir -p ${expdir}
 if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
     echo "stage 4: Network Training"
     ${cuda_cmd} --gpu ${ngpu} ${expdir}/train.log \
-        asr_train.py \
+        asr_train_vggblstm.py \
         --config ${train_config} \
         --preprocess-conf ${preprocess_config} \
         --ngpu ${ngpu} \
@@ -262,8 +265,8 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         --resume ${resume} \
         --train-json ${feat_tr_dir}/data_${bpemode}${nbpe}.json \
         --valid-json ${feat_dt_dir}/data_${bpemode}${nbpe}.json \
-        --enc-init "pretrained/medium/model.val5.avg.best" \
-        --dec-init "pretrained/medium/model.val5.avg.best"
+        # --enc-init "${pretrain_model}/model.acc.best" \
+        # --dec-init "${pretrain_model}/model.acc.best"
 fi
 
 if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
@@ -303,7 +306,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
         #     lang_model=rnnlm.model.best
         # else
         #     if ${use_lm_valbest_average}; then
-        #         lang_model=rnnlm.val${lm_n_average}.avg.best
+        #         lang_model=rnnlm.val${lm_n_average}.avg.bests
         #         opt="--log ${lmexpdir}/log"
         #     else
         #         lang_model=rnnlm.last${lm_n_average}.avg.best
@@ -335,7 +338,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
 
             # set batchsize 0 to disable batch decoding
             ${decode_cmd} JOB=1:${nj} ${expdir}/${decode_dir}/log/decode.JOB.log \
-                asr_recog.py \
+                asr_recog_vggblstm.py \
                 --config ${decode_config} \
                 --ngpu ${ngpu} \
                 --backend ${backend} \
@@ -350,10 +353,10 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
 
             score_sclite.sh --bpe ${nbpe} --bpemodel ${bpemodel}.model --wer true \
                 ${expdir}/${decode_dir} ${dict}
-            # score_sclite.sh --bpe 1230 --bpemodel data/lang_char/ trainset_unigram1230.model --wer true ${expdir}/${decode_dir} ${dict}
-            # nbpe=5000; bpemodel=data/lang_char/trainset_unigram5000.model; wer=true
+            # score_sclite.sh --bpe 1230 --bpemodel data/lang_char_vggblstm/ trainset_unigram1230.model --wer true ${expdir}/${decode_dir} ${dict}
+            # nbpe=5000; bpemodel=data/lang_char_vggblstm/trainset_unigram5000.model; wer=true
             # exp/trainset_pytorch_train_specaug / decode_test_clean_model.acc.best_decode_lm
-            # data/lang_char/trainset_unigram5000_units.txt
+            # data/lang_char_vggblstm/trainset_unigram5000_units.txt
             # calc wer score
 
         ) &
