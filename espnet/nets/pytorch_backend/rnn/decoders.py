@@ -937,7 +937,7 @@ class Decoder(torch.nn.Module, ScorerInterface):
                         ctc_state[idx], accum_best_ids
                     )
 
-        torch.cuda.empty_cache()
+        torch.cuda.empty_cache()   # !!!节约显存
 
         dummy_hyps = [
             {"yseq": [self.sos, self.eos], "score": np.array([-float("inf")])}

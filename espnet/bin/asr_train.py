@@ -409,7 +409,7 @@ def get_parser(parser=None, required=True):
         "--wtype",
         default="blstmp",
         type=str,
-        choces=[
+        choices=[
             "lstm",
             "blstm",
             "lstmp",
